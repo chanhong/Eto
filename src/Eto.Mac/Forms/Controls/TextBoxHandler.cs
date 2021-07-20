@@ -71,16 +71,49 @@ namespace Eto.Mac.Forms.Controls
 			return null;
 		}
 	}
+	
+	public interface IColorizeCell
+	{
+		Color? Color { get; set; }
+	}
+	
+	public class EtoTextFieldCell : NSTextFieldCell, IColorizeCell
+	{
+		ColorizeView colorize;
+
+		public EtoTextFieldCell()
+		{
+			StringValue = string.Empty;
+		}
+
+		public Color? Color 
+		{ 
+			get => colorize?.Color;
+			set => ColorizeView.Create(ref colorize, value);
+		}
+
+		public override void DrawInteriorWithFrame(CGRect cellFrame, NSView inView)
+		{
+			colorize?.End();
+			base.DrawInteriorWithFrame(cellFrame, inView);
+		}
+		public override void DrawWithFrame(CGRect cellFrame, NSView inView)
+		{
+			colorize?.Begin(cellFrame, inView);
+			base.DrawWithFrame(cellFrame, inView);
+		}
+	}
 
 	public class EtoTextField : NSTextField, IMacControl, ITextBoxWithMaxLength
 	{
 		public WeakReference WeakHandler { get; set; }
 
+		IMacViewHandler Handler => WeakHandler.Target as IMacViewHandler;
 		IMacText TextHandler => WeakHandler.Target as IMacText;
 		ITextBoxWithMaxLength MaxLengthHandler => WeakHandler.Target as ITextBoxWithMaxLength;
 
 		public int MaxLength { get { return MaxLengthHandler?.MaxLength ?? 0; } }
-
+		
 		public EtoTextField(IntPtr handle)
 			: base(handle)	
 		{
@@ -90,6 +123,7 @@ namespace Eto.Mac.Forms.Controls
 
 		public EtoTextField()
 		{
+			Cell = new EtoTextFieldCell();
 			Bezeled = true;
 			Editable = true;
 			Selectable = true;
@@ -112,11 +146,31 @@ namespace Eto.Mac.Forms.Controls
 
 		public override void MouseDown(NSEvent theEvent)
 		{
-			base.MouseDown(theEvent);
 			var h = TextHandler;
 			if (h != null && h.AutoSelectMode == AutoSelectMode.Always && CurrentEditor?.SelectedRange.Length == 0)
 			{
 				CurrentEditor?.SelectAll(this);
+			}
+			
+			var handler = Handler;
+			if (handler == null)
+				return;
+			var args = MacConversions.GetMouseEvent(handler, theEvent, false);
+			if (theEvent.ClickCount >= 2)
+				handler.Callback.OnMouseDoubleClick(handler.Widget, args);
+			
+			if (!args.Handled)
+			{
+				handler.Callback.OnMouseDown(handler.Widget, args);
+			}
+			if (!args.Handled)
+			{
+				handler.SuppressMouseEvents++;
+				base.MouseDown(theEvent);
+				handler.SuppressMouseEvents--;
+				
+				// some controls use event loops until mouse up, so we need to trigger the mouse up here.
+				handler.TriggerMouseCallback();
 			}
 		}
 	}

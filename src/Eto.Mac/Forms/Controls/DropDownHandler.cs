@@ -67,7 +67,7 @@ namespace Eto.Mac.Forms.Controls
 
 		CollectionHandler collection;
 
-		public class EtoPopUpButtonCell : NSPopUpButtonCell
+		public class EtoPopUpButtonCell : NSPopUpButtonCell, IColorizeCell
 		{
 			NSDictionary textAttributes;
 			Color? textColor;
@@ -275,14 +275,17 @@ namespace Eto.Mac.Forms.Controls
 			set
 			{
 				var selected = Widget.SelectedValue;
+				var selectedIndex = SelectedIndex;
 				Control.SelectItem(-1);
 				collection?.Unregister();
 				collection = new CollectionHandler { Handler = this };
 				collection.Register(value);
 				if (!ReferenceEquals(selected, null))
 				{
-					Control.SelectItem(collection.IndexOf(selected));
-					Callback.OnSelectedIndexChanged(Widget, EventArgs.Empty);
+					var newIndex = collection.IndexOf(selected);
+					Control.SelectItem(newIndex);
+					if (selectedIndex != newIndex)
+						Callback.OnSelectedIndexChanged(Widget, EventArgs.Empty);
 				}
 				InvalidateMeasure();
 			}
@@ -297,19 +300,6 @@ namespace Eto.Mac.Forms.Controls
 				{
 					Control.SelectItem(value);
 					Callback.OnSelectedIndexChanged(Widget, EventArgs.Empty);
-				}
-			}
-		}
-
-		public override Color BackgroundColor
-		{
-			get { return ((EtoPopUpButtonCell)Control.Cell).Color ?? Colors.Transparent; }
-			set
-			{
-				if (value != BackgroundColor)
-				{
-					((EtoPopUpButtonCell)Control.Cell).Color = value;
-					Control.SetNeedsDisplay();
 				}
 			}
 		}

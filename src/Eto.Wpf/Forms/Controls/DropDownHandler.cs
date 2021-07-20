@@ -15,6 +15,7 @@ using System.Collections.Specialized;
 
 namespace Eto.Wpf.Forms.Controls
 {
+	
 	public class DropDownHandler : DropDownHandler<EtoComboBox, DropDown, DropDown.ICallback>
 	{
 		internal static readonly object AllowVirtualization_Key = new object();
@@ -23,28 +24,10 @@ namespace Eto.Wpf.Forms.Controls
 
 	public class EtoComboBox : swc.ComboBox, IEtoWpfControl
 	{
-		int? selected;
-
-		public EtoComboBox()
-		{
-			Loaded += ComboBoxEx_Loaded;
-		}
-
 		public bool IsVirtualizing
 		{
 			get => swc.VirtualizingPanel.GetIsVirtualizing(this);
 			set => swc.VirtualizingPanel.SetIsVirtualizing(this, value);
-		}
-
-		public override void OnApplyTemplate()
-		{
-			base.OnApplyTemplate();
-
-			if (!IsLoaded)
-			{
-				selected = SelectedIndex;
-				SelectedIndex = -1;
-			}
 		}
 
 		public swc.Primitives.Popup Popup => GetTemplateChild("PART_Popup") as swc.Primitives.Popup;
@@ -64,12 +47,6 @@ namespace Eto.Wpf.Forms.Controls
 
 		public IWpfFrameworkElement Handler { get; set; }
 
-		protected override void OnSelectionChanged(swc.SelectionChangedEventArgs e)
-		{
-			if (selected == null)
-				base.OnSelectionChanged(e);
-		}
-
 		protected override void OnItemsChanged(System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
 		{
 			base.OnItemsChanged(e);
@@ -77,13 +54,6 @@ namespace Eto.Wpf.Forms.Controls
 			{
 				InvalidateMeasure();
 			}
-		}
-
-		void ComboBoxEx_Loaded(object sender, sw.RoutedEventArgs e)
-		{
-			if (selected == null) return;
-			SelectedIndex = selected.Value;
-			selected = null;
 		}
 
 		sw.Size FindMaxSize(sw.Size constraint)
@@ -219,8 +189,8 @@ namespace Eto.Wpf.Forms.Controls
 
 		public int SelectedIndex
 		{
-			get { return Control.SelectedIndex; }
-			set { Control.SelectedIndex = value; }
+			get => Control.SelectedIndex;
+			set => Control.SelectedIndex = value;
 		}
 
 		protected virtual swc.Border BorderControl => Control.FindChild<swc.Border>();

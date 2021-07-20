@@ -29,7 +29,6 @@ namespace Eto.Wpf.Forms.Controls
 		int? position;
 		int splitterWidth = 5;
 		double relative = double.NaN;
-		readonly sw.Style style;
 		swc.ColumnDefinition xcolumn;
 		swc.RowDefinition ycolumn;
 		bool panel1Visible, panel2Visible;
@@ -64,10 +63,6 @@ namespace Eto.Wpf.Forms.Controls
 			Control.Children.Add(pane1);
 			Control.Children.Add(splitter);
 			Control.Children.Add(pane2);
-
-			style = new sw.Style();
-			style.Setters.Add(new sw.Setter(sw.FrameworkElement.VerticalAlignmentProperty, sw.VerticalAlignment.Stretch));
-			style.Setters.Add(new sw.Setter(sw.FrameworkElement.HorizontalAlignmentProperty, sw.HorizontalAlignment.Stretch));
 
 			UpdateOrientation();
 			Control.Loaded += Control_Loaded;
@@ -192,18 +187,18 @@ namespace Eto.Wpf.Forms.Controls
 			}
 			else if (fixedPanel == SplitterFixedPanel.Panel1)
 			{
-				var size1 = panel1.GetPreferredSize();
+				var size1 = panel1?.GetPreferredSize() ?? SizeF.Empty;
 				SetRelative(orientation == Orientation.Horizontal ? size1.Width : size1.Height);
 			}
 			else if (fixedPanel == SplitterFixedPanel.Panel2)
 			{
-				var size2 = panel2.GetPreferredSize();
+				var size2 = panel2?.GetPreferredSize() ?? SizeF.Empty;
 				SetRelative(orientation == Orientation.Horizontal ? size2.Width : size2.Height);
 			}
 			else
 			{
-				var size1 = panel1.GetPreferredSize();
-				var size2 = panel2.GetPreferredSize();
+				var size1 = panel1?.GetPreferredSize() ?? SizeF.Empty;
+				var size2 = panel2?.GetPreferredSize() ?? SizeF.Empty;
 				SetRelative(orientation == Orientation.Horizontal
 					? size1.Width / (double)(size1.Width + size2.Width)
 					: size1.Height / (double)(size1.Height + size2.Height));
@@ -630,7 +625,6 @@ namespace Eto.Wpf.Forms.Controls
 				if (panel1 != null)
 				{
 					var control = panel1.GetWpfFrameworkElement();
-					control.ContainerControl.Style = style;
 					SetStretch(panel1);
 					if (Widget.Loaded)
 						control.SetScale(true, true);
@@ -645,7 +639,7 @@ namespace Eto.Wpf.Forms.Controls
 				}
 			}
 		}
-
+		
 		public Control Panel2
 		{
 			get { return panel2; }
@@ -658,7 +652,6 @@ namespace Eto.Wpf.Forms.Controls
 				if (panel2 != null)
 				{
 					var control = panel2.GetWpfFrameworkElement();
-					control.ContainerControl.Style = style;
 					SetStretch(panel2);
 					if (Widget.Loaded)
 						control.SetScale(true, true);
