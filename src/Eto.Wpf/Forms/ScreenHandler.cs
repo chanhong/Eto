@@ -1,11 +1,3 @@
-using System;
-using Eto.Forms;
-using sw = System.Windows;
-using sd = System.Drawing;
-using swm = System.Windows.Media;
-using swf = System.Windows.Forms;
-using Eto.Drawing;
-using System.Linq;
 using Eto.Wpf.Drawing;
 
 namespace Eto.Wpf.Forms
@@ -64,16 +56,24 @@ namespace Eto.Wpf.Forms
 				using (var bmpGraphics = sd.Graphics.FromImage(screenBmp))
 				{
 					bmpGraphics.CopyFromScreen(realRect.X, realRect.Y, 0, 0, realRect.Size.ToSD());
-					var bitmapSource = sw.Interop.Imaging.CreateBitmapSourceFromHBitmap(
-						screenBmp.GetHbitmap(),
-						IntPtr.Zero,
-						sw.Int32Rect.Empty,
-						sw.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+					var hbmp = screenBmp.GetHbitmap();
+					try
+					{
+						var bitmapSource = sw.Interop.Imaging.CreateBitmapSourceFromHBitmap(
+							hbmp,
+							IntPtr.Zero,
+							sw.Int32Rect.Empty,
+							sw.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+							
+						if (oldDpiAwareness != Win32.DPI_AWARENESS_CONTEXT.NONE)
+							Win32.SetThreadDpiAwarenessContextSafe(oldDpiAwareness);
 
-					if (oldDpiAwareness != Win32.DPI_AWARENESS_CONTEXT.NONE)
-						Win32.SetThreadDpiAwarenessContextSafe(oldDpiAwareness);
-
-					return new Bitmap(new BitmapHandler(bitmapSource));
+						return new Bitmap(new BitmapHandler(bitmapSource));
+					}
+					finally
+					{
+						Win32.DeleteObject(hbmp);
+					}
 				}
 			}
 		}

@@ -3,6 +3,7 @@
   <Import Project="..\build\Common.Build.props" />
   <PropertyGroup>
     <Deterministic>false</Deterministic>
-    <BaseOutputPath>$(BasePath)artifacts\samples\</BaseOutputPath>
+    <BaseOutputPath>$(BasePath)artifacts\samples\$(MSBuildProjectName)\</BaseOutputPath>
+    <MacBundleDotNet>False</MacBundleDotNet>
   </PropertyGroup>
 </Project>

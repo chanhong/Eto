@@ -2,37 +2,6 @@
 // has something to do with using layers (background colors) at the same time
 //#define USE_FLIPPED
 
-using System;
-using Eto.Drawing;
-using Eto.Forms;
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 namespace Eto.Mac.Forms.Controls
 {
 	public class ScrollableHandler : MacPanel<NSScrollView, Scrollable, Scrollable.ICallback>, Scrollable.IHandler
@@ -45,7 +14,7 @@ namespace Eto.Mac.Forms.Controls
 
 		public class EtoScrollView : NSScrollView, IMacControl
 		{
-			EtoDocumentView documentView; // keep reference as it can be GC'd in some circumstances (in Xamarin.Mac)
+			EtoDocumentView documentView; // keep reference as it can be GC'd in some circumstances
 
 			public WeakReference WeakHandler { get; set; }
 
@@ -57,7 +26,7 @@ namespace Eto.Mac.Forms.Controls
 
 			public override void ResetCursorRects()
 			{
-				var cursor = Handler.Cursor;
+				var cursor = Handler?.Cursor;
 				if (cursor != null)
 					AddCursorRect(new CGRect(CGPoint.Empty, Frame.Size), cursor.ControlObject as NSCursor);
 			}
@@ -92,7 +61,7 @@ namespace Eto.Mac.Forms.Controls
 			{
 			}
 
-			public EtoDocumentView(IntPtr handle)
+			public EtoDocumentView(NativeHandle handle)
 				: base(handle)
 			{
 				
@@ -233,7 +202,7 @@ namespace Eto.Mac.Forms.Controls
 				else if (availableSize.Height < 0)
 					availableSize.Height = float.PositiveInfinity;
 
-				var preferred = (Content?.GetPreferredSize(availableSize) ?? Size.Empty);
+				var preferred = Content?.GetPreferredSize(availableSize) ?? Size.Empty;
 
 				if (availableSize.Width < 0)
 					size.Width = preferred.Width;
@@ -243,12 +212,47 @@ namespace Eto.Mac.Forms.Controls
 			else
 			{
 				var preferred = (Content?.GetPreferredSize(SizeF.PositiveInfinity) ?? Size.Empty) + Padding.Size;
-				var vbar = preferred.Height > clientSize.Height;
-				var hbar = preferred.Width > clientSize.Width;
-				if (hbar || vbar)
-					clientSize = Control.ContentSizeForFrame(Control.Frame.Size, hbar, vbar).ToEto();
+				
+				for (int i = 0; i < 2; i++)
+				{
+					var proposedSize = preferred;
+					if ((ExpandContentWidth && proposedSize.Width < clientSize.Width)
+							|| (ExpandContentHeight && proposedSize.Height < clientSize.Height))
+					{
+						var availableSize = SizeF.PositiveInfinity;
+						if (ExpandContentWidth && proposedSize.Width < clientSize.Width)
+							availableSize.Width = clientSize.Width - Padding.Horizontal;
+						if (ExpandContentHeight && proposedSize.Height < clientSize.Height)
+							availableSize.Height = clientSize.Height - Padding.Vertical;
 
-				size = SizeF.Max(clientSize, preferred);
+						preferred = (Content?.GetPreferredSize(availableSize) ?? Size.Empty) + Padding.Size;
+					}
+
+					var vbar = preferred.Height > clientSize.Height;
+					var hbar = preferred.Width > clientSize.Width;
+
+					// if we have scrollbars, we need to recalculate the client size again given the scrollbars as they can take space
+					if (hbar || vbar)
+					{
+						clientSize = Control.ContentSizeForFrame(Control.Frame.Size, hbar, vbar).ToEto();
+
+						// if we have overlay scrollbars, we can break out of the loop as they don't take up space
+						if (Control.ScrollerStyle == NSScrollerStyle.Overlay)
+							break;
+					}
+					else
+					{
+						// no scrollbars are needed, so we don't need to recaculate
+						break;
+					}
+				}
+
+				size = preferred;
+				
+				if (ExpandContentWidth && size.Width < clientSize.Width)
+					size.Width = clientSize.Width;
+				if (ExpandContentHeight && size.Height < clientSize.Height)
+					size.Height = clientSize.Height;
 			}
 
 			ContentControl.SetFrameSize(size.ToNS());
@@ -261,17 +265,24 @@ namespace Eto.Mac.Forms.Controls
 			if (ctl == null)
 				return;
 			
-			var size = Content.GetPreferredSize(SizeF.PositiveInfinity).ToNS();
-
 			var padding = Padding;
 			var clientSize = ContentControl.Frame.Size.ToEto() - padding.Size;
+			
+			SizeF availableSize = SizeF.PositiveInfinity;
+			if (ExpandContentWidth)
+				availableSize.Width = clientSize.Width;
+			if (ExpandContentHeight)
+				availableSize.Height = clientSize.Height;
+			
+			var size = (Content?.GetPreferredSize(availableSize - Padding.Size) ?? Size.Empty) + Padding.Size;
+
 
 			if (ExpandContentWidth)
-				size.Width = (nfloat)Math.Max(clientSize.Width, size.Width);
+				size.Width = (float)Math.Max(clientSize.Width, size.Width);
 			if (ExpandContentHeight)
-				size.Height = (nfloat)Math.Max(clientSize.Height, size.Height);
+				size.Height = (float)Math.Max(clientSize.Height, size.Height);
 
-			var clientFrame = new CGRect(new CGPoint(padding.Left, (nfloat)(padding.Bottom + clientSize.Height - size.Height)), size);
+			var clientFrame = new CGRect(new CGPoint(padding.Left, (nfloat)(padding.Bottom + clientSize.Height - size.Height)), size.ToNS());
 
 			ctl.Frame = clientFrame;
 		}

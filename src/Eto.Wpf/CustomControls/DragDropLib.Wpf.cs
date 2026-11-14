@@ -7,7 +7,6 @@
 
 namespace DragDropLib
 {
-	using System;
 	using System.Windows;
 
 	static class WpfDragDropLibExtensions
@@ -33,12 +32,7 @@ namespace DragDropLib
 
 namespace System.Windows
 {
-	using System;
 	using System.Collections.Generic;
-	using System.IO;
-	using System.Linq;
-	using System.Runtime.InteropServices;
-	using System.Windows.Input;
 	using System.Windows.Media.Imaging;
 	using DragDropLib;
 	using ComTypes = System.Runtime.InteropServices.ComTypes;
@@ -307,7 +301,7 @@ namespace System.Windows
 			}
 		}
 
-		/// <summary>Some text
+		/// <summary>
 		/// Provides a default GiveFeedback event handler for drag sources.
 		/// </summary>
 		/// <param name="data">The associated data object for the event.</param>
@@ -664,7 +658,6 @@ namespace System.Windows
 
 namespace System.Windows
 {
-	using System;
 	using System.Windows;
 	using System.Windows.Interop;
 	using ComIDataObject = System.Runtime.InteropServices.ComTypes.IDataObject;
@@ -793,13 +786,7 @@ namespace System.Windows
 
 namespace System.Windows
 {
-	using System;
-	using System.Collections.Generic;
-	using System.ComponentModel;
 	using System.Drawing.Imaging;
-	using System.IO;
-	using System.Runtime.InteropServices;
-	using System.Runtime.Serialization;
 	using System.Runtime.Serialization.Formatters.Binary;
 	using System.Windows.Media;
 	using System.Windows.Media.Imaging;
@@ -879,8 +866,18 @@ namespace System.Windows
 			// BitmapSource to a System.Drawing.Bitmap.
 			Bitmap bmp = GetBitmapFromBitmapSource(image, Colors.Magenta);
 
-			// Sets the drag image from a Bitmap
-			SetDragImage(dataObject, bmp, cursorOffset);
+			try
+			{
+				// Sets the drag image from a Bitmap
+				SetDragImage(dataObject, bmp, cursorOffset);
+			}
+			finally
+			{
+				// GetHbitmap() hands the drag image manager its own copy of the bits, so this
+				// intermediate Bitmap is ours to dispose. A drag sets a drag image every time, so
+				// leaking it here leaks a GDI object per drag.
+				bmp.Dispose();
+			}
 		}
 
 		/// <summary>

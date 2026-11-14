@@ -1,10 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Globalization;
-using sw = System.Windows;
-using swm = System.Windows.Media;
-using swmi = System.Windows.Media.Imaging;
-using Eto.Drawing;
 using Eto.Wpf.Forms;
 
 namespace Eto.Wpf.Drawing
@@ -25,7 +18,7 @@ namespace Eto.Wpf.Drawing
 			while (colors.Count < numColors) {
 				colors.Add (swm.Colors.Black);
 			}
-			ApplicationHandler.InvokeIfNecessary (() => {
+			Application.Instance.Invoke (() => {
 				Control = new swmi.WriteableBitmap (width, height, 96, 96, format, new swmi.BitmapPalette (colors));
 			});
 		}
@@ -40,9 +33,9 @@ namespace Eto.Wpf.Drawing
 			if (isLocked)
 				throw new InvalidOperationException ();
 			BitmapDataHandler bd = null;
-			ApplicationHandler.InvokeIfNecessary (() => {
+			Application.Instance.Invoke(() => {
 				Control.Lock ();
-				bd = new BitmapDataHandler (Widget, Control.BackBuffer, Size.Width, Control.Format.BitsPerPixel, Control);
+				bd = new BitmapDataHandler (Widget, Control.BackBuffer, Size.Width, Control.Format.BitsPerPixel, Control, false);
 			});
 			isLocked = true;
 			return bd;
@@ -52,7 +45,7 @@ namespace Eto.Wpf.Drawing
 		{
 			if (!isLocked)
 				throw new InvalidOperationException ();
-			ApplicationHandler.InvokeIfNecessary (() => {
+			Application.Instance.Invoke(() => {
 				Control.AddDirtyRect (new sw.Int32Rect (0, 0, Size.Width, Size.Height));
 				Control.Unlock ();
 				if (paletteSetInLocked) {
@@ -83,7 +76,7 @@ namespace Eto.Wpf.Drawing
 				if (isLocked)
 					paletteSetInLocked = true;
 				else {
-					ApplicationHandler.InvokeIfNecessary(SetPalette);
+					Application.Instance.Invoke(SetPalette);
 				}
 			}
 		}

@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using Eto.Drawing;
 using Eto.Direct2D.Drawing;
 using s = SharpDX;
 using sd = SharpDX.Direct2D1;
@@ -28,6 +23,11 @@ namespace Eto.Direct2D
 		public static s.Color ToDxColor(this Color color)
 		{
 			return new s.Color(color.R, color.G, color.B, color.A);
+		}
+
+		public static Color ToEto(this s.ColorBGRA value)
+		{
+			return Color.FromArgb(value.R, value.G, value.B, value.A);
 		}
 
 		public static Color ToEto(this s.Color4 value)
@@ -244,16 +244,14 @@ namespace Eto.Direct2D
 
 		public static DashStyle ToEto(this sd.DashStyle d)
 		{
-			if (object.ReferenceEquals(d, sd.DashStyle.Dash))
-				return DashStyles.Dash;
-			else if (object.ReferenceEquals(d, sd.DashStyle.DashDot))
-				return DashStyles.DashDot;
-			else if (object.ReferenceEquals(d, sd.DashStyle.DashDotDot))
-				return DashStyles.DashDotDot;
-			else if (object.ReferenceEquals(d, sd.DashStyle.Dot))
-				return DashStyles.Dot;
-			else
-				return DashStyles.Solid;
+			return d switch
+			{
+				sd.DashStyle.Dash => DashStyles.Dash,
+				sd.DashStyle.DashDot => DashStyles.DashDot,
+				sd.DashStyle.DashDotDot => DashStyles.DashDotDot,
+				sd.DashStyle.Dot => DashStyles.Dot,
+				_ => DashStyles.Solid
+			};
 		}
 
 		public static FillMode ToEto(this sd.FillMode f)

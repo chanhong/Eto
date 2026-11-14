@@ -1,12 +1,3 @@
-using System;
-using Eto.Forms;
-using System.ComponentModel;
-using System.Diagnostics;
-using Eto.Drawing;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-
 namespace Eto.Test
 {
 	public class TestApplication : Application
@@ -17,11 +8,7 @@ namespace Eto.Test
 
 		public static IEnumerable<Assembly> DefaultTestAssemblies()
 		{
-#if PCL
-			yield return typeof(TestApplication).GetTypeInfo().Assembly;
-#else
 			yield return typeof(TestApplication).Assembly;
-#endif
 		}
 
 		public List<Assembly> TestAssemblies { get; private set; }
@@ -37,6 +24,7 @@ namespace Eto.Test
 			: base(platform)
 		{
 			TestAssemblies = DefaultTestAssemblies().ToList();
+			UIThreadCheckMode = UIThreadCheckMode.Error;
 			this.Name = "Test Application";
 			this.Style = "application";
 
@@ -44,10 +32,26 @@ namespace Eto.Test
 			{
 				NotificationActivated += (sender, e) => Log.Write(this, $"Notification: {e.ID}, userData: {e.UserData}");
 			}
+
+		}
+
+		protected override void OnThemeChanged(EventArgs e)
+		{
+			base.OnThemeChanged(e);
+			Settings.LastTheme = Theme.Name;
+		}
+
+		protected override void OnIsActiveChanged(EventArgs e)
+		{
+			base.OnIsActiveChanged(e);
+			Log.Write(this, $"IsActiveChanged: {IsActive}");
 		}
 
 		protected override void OnInitialized(EventArgs e)
 		{
+			if (Platform.Supports<Themes.IHandler>() && !string.IsNullOrEmpty(Settings.LastTheme))
+				Theme = Themes.AllThemes.FirstOrDefault(t => t.Name == Settings.LastTheme) ?? Themes.System;
+
 			MainForm = new MainForm(TestSections.Get(TestAssemblies));
 
 			base.OnInitialized(e);

@@ -1,49 +1,13 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.Mac.Drawing;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
-#if XAMMAC
-using nnint = System.Int32;
-#elif Mac64
-using nnint = System.UInt64;
-#else
-using nnint = System.UInt32;
-#endif
+using Eto.Mac.Forms.Menu;
+using Range = Eto.Forms.Range;
 
 namespace Eto.Mac.Forms.Controls
 {
 	public class TextAreaHandler : TextAreaHandler<TextArea, TextArea.ICallback>, TextArea.IHandler
 	{
-	}
+		internal static readonly IntPtr selString = Selector.GetHandle("string");
+		internal static readonly IntPtr selLength = Selector.GetHandle("length");	}
 
 	public interface ITextAreaHandler
 	{
@@ -59,8 +23,6 @@ namespace Eto.Mac.Forms.Controls
 
 		Range<int> lastSelection { get; set; }
 		int? lastCaretIndex { get; set; }
-
-		void PerformLayout();
 	}
 
 	public class EtoTextAreaDelegate : NSTextViewDelegate
@@ -77,6 +39,13 @@ namespace Eto.Mac.Forms.Controls
 		public override void DidChangeSelection(NSNotification notification)
 		{
 			var handler = Handler;
+
+			if (notification.Object is NSTextView textView && textView.HasMarkedText)
+			{
+				// While an IME composition is in progress the input method owns the keystroke (building, navigating, or committing the composition), so don't surface it as a KeyDown to the app. This matches WPF/Windows, where IME-processed keys aren't raised as key events.
+				return;
+			}
+			
 			var selection = handler.Selection;
 			if (handler.SuppressSelectionChanged == 0 && selection != Handler.lastSelection)
 			{
@@ -90,6 +59,18 @@ namespace Eto.Mac.Forms.Controls
 				handler.lastCaretIndex = caretIndex;
 			}
 		}
+
+		public override NSMenu MenuForEvent(NSTextView view, NSMenu menu, NSEvent theEvent, nuint charIndex)
+		{
+			var handler = Handler;
+			if (handler == null)
+				return menu;
+			
+			var contextMenu = handler.Widget.ContextMenu;
+			if (contextMenu != null)
+				return (contextMenu.Handler as ContextMenuHandler)?.Control;
+			return menu;
+		}
 	}
 
 	public class EtoTextView : NSTextView, IMacControl
@@ -102,16 +83,23 @@ namespace Eto.Mac.Forms.Controls
 			set { WeakHandler = new WeakReference(value); }
 		}
 
+#if MACOS_NET && !VSMAC
+		public override void ChangeColor(NSColorPanel sender)
+		{
+			// ignore color changes
+		}
+#else
 		public override void ChangeColor(NSObject sender)
 		{
 			// ignore color changes
 		}
+#endif
 
 		public EtoTextView(ITextAreaHandler handler)
 		{
 			Delegate = new EtoTextAreaDelegate { Handler = handler };
 			AutoresizingMask = NSViewResizingMask.WidthSizable | NSViewResizingMask.HeightSizable;
-			HorizontallyResizable = true;
+			HorizontallyResizable = false;
 			VerticallyResizable = true;
 			Editable = true;
 			RichText = false;
@@ -121,15 +109,6 @@ namespace Eto.Mac.Forms.Controls
 			MinSize = CGSize.Empty;
 			MaxSize = new CGSize(float.MaxValue, float.MaxValue);
 			TextContainer.WidthTracksTextView = true;
-		}
-
-		public override void Layout()
-		{
-			if (MacView.NewLayout)
-				base.Layout();
-			(Handler as ITextAreaHandler)?.PerformLayout();
-			if (!MacView.NewLayout)
-				base.Layout();
 		}
 	}
 
@@ -142,8 +121,17 @@ namespace Eto.Mac.Forms.Controls
 		Range<int> ITextAreaHandler.lastSelection { get; set; }
 		int ITextAreaHandler.SuppressSelectionChanged => suppressSelectionChanged;
 
+		public override NSView MenuControl => Control;
+
 		public override void OnKeyDown(KeyEventArgs e)
 		{
+			if (Control.HasMarkedText)
+			{
+				// While an IME composition is in progress the input method owns the keystroke (building, navigating, or committing the composition), so don't surface it as a KeyDown to the app. This matches WPF/Windows, where IME-processed keys aren't raised as key events.
+				// The KeyDown event is sent for the first key, but not for subsequent keys. Only the last KeyUp for Enter key is sent, but not the KeyDown.
+				return;
+			}
+
 			if (!AcceptsTab)
 			{
 				if (e.KeyData == Keys.Tab)
@@ -166,24 +154,34 @@ namespace Eto.Mac.Forms.Controls
 			}
 			base.OnKeyDown(e);
 		}
+		
+		public override void OnKeyUp(KeyEventArgs e)
+		{
+			if (Control.HasMarkedText)
+			{
+				// While an IME composition is in progress the input method owns the keystroke (building, navigating, or committing the composition), so don't surface it as a KeyDown to the app. This matches WPF/Windows, where IME-processed keys aren't raised as key events.
+				// Only the last KeyUp for Enter key is sent, but not the KeyDown.
+				return;
+			}
+
+			base.OnKeyUp(e);
+		}
 
 		public NSScrollView Scroll { get; private set; }
 
-		public override NSView ContainerControl
-		{
-			get { return Scroll; }
-		}
+		public override NSView ContainerControl => Scroll;
 
-		protected override NSTextView CreateControl()
-		{
-			return new EtoTextView(this);
-		}
+		public override NSView TextInputControl => Control;
+
+		protected override NSTextView CreateControl() => new EtoTextView(this);
 
 		protected override void Initialize()
 		{
+			// Control.BackgroundColor = Colors.Transparent.ToNSUI();
 			Scroll = new EtoScrollView
 			{
 				Handler = this,
+				DrawsBackground = false,
 				AutoresizesSubviews = true,
 				HasVerticalScroller = true,
 				HasHorizontalScroller = true,
@@ -237,7 +235,13 @@ namespace Eto.Mac.Forms.Controls
 		public bool ReadOnly
 		{
 			get { return Widget.Properties.Get<bool>(ReadOnly_Key); }
-			set { Widget.Properties.Set(ReadOnly_Key, value, () => Control.Editable = !value); }
+			set
+			{
+				if (Widget.Properties.TrySet(ReadOnly_Key, value))
+				{
+					Control.Editable = !value;
+				}
+			}
 		}
 
 		protected override bool ControlEnabled
@@ -249,14 +253,13 @@ namespace Eto.Mac.Forms.Controls
 				if (!value)
 				{
 					Control.TextColor = NSColor.DisabledControlText;
-					Control.BackgroundColor = NSColor.ControlBackground;
 				}
 				else
 				{
 					Control.TextColor = TextColor.ToNSUI();
-					Control.BackgroundColor = BackgroundColor.ToNSUI();
 					Control.Editable = !ReadOnly; // this gets set to false when Selectable is set to false, so we need to re-enable it.
 				}
+				SetBackgroundColor();
 			}
 		}
 
@@ -281,25 +284,27 @@ namespace Eto.Mac.Forms.Controls
 			get { return Widget.Properties.Get(TextColor_Key, () => NSColor.ControlText.ToEto()); }
 			set
 			{
-				Widget.Properties.Set(TextColor_Key, value, () =>
+				if (Widget.Properties.TrySet(TextColor_Key, value))
 				{
 					Control.TextColor = Control.InsertionPointColor = value.ToNSUI();
-				});
+				}
 			}
 		}
 
-		static readonly object BackgroundColor_Key = new object();
+		static readonly object DisabledBackgroundColor_Key = new object();
 
-		public override Color BackgroundColor
+		public virtual Color DisabledBackgroundColor
 		{
-			get { return Widget.Properties.Get<Color>(BackgroundColor_Key, () => NSColor.ControlBackground.ToEto()); }
-			set
-			{
-				Widget.Properties.Set(BackgroundColor_Key, value, () =>
-				{
-					Control.BackgroundColor = value.ToNSUI();
-				});
-			}
+			get => Widget.Properties.Get<Color?>(DisabledBackgroundColor_Key) ?? NSColor.WindowBackground.ToEto();
+			set => Widget.Properties.Set(DisabledBackgroundColor_Key, value);
+		}
+
+		protected override Color DefaultBackgroundColor => NSColor.ControlBackground.ToEto();
+
+		protected override void SetBackgroundColor(Color? color)
+		{
+			var c = color ?? (ControlEnabled ? DefaultBackgroundColor : DisabledBackgroundColor);
+			Control.BackgroundColor = c.ToNSUI();
 		}
 
 		static readonly object Font_Key = new object();
@@ -309,31 +314,44 @@ namespace Eto.Mac.Forms.Controls
 			get { return Widget.Properties.Create(Font_Key, () => new Font(new FontHandler(Control.Font))); }
 			set
 			{
-				Widget.Properties.Set(Font_Key, value, () =>
+				if (Widget.Properties.TrySet(Font_Key, value))
 				{
 					Control.Font = value.ToNS() ?? NSFont.SystemFontOfSize(NSFont.SystemFontSize);
 					InvalidateMeasure();
-				});
+				}
 			}
 		}
 
 		public bool Wrap
 		{
-			get
-			{
-				return Control.TextContainer.WidthTracksTextView;
-			}
+			get => Control.TextContainer.WidthTracksTextView;
 			set
 			{
+				if (value == Wrap)
+					return;
+					
 				if (value)
 				{
+					Control.HorizontallyResizable = false;
 					Control.TextContainer.WidthTracksTextView = true;
-					Control.NeedsLayout = true;
+					if (Widget.Loaded)
+					{
+						// shrink the control and text container to the current width of the visible rectangle
+						var width = Scroll.DocumentVisibleRect.Size.Width;
+						Control.SetFrameSize(new CGSize(width, Control.Frame.Height));
+						Control.TextContainer.Size = new CGSize(width, float.MaxValue);
+						Control.NeedsLayout = true;
+					}
 				}
 				else
 				{
+					Control.HorizontallyResizable = true;
 					Control.TextContainer.WidthTracksTextView = false;
-					Control.TextContainer.ContainerSize = new CGSize(float.MaxValue, float.MaxValue);
+					
+					// anything greater then selection isn't shown when alignment isn't Left
+					// even though the default size is 10000000, setting it to that doesn't work.
+					// must be some weird magic going on behind the scenes..
+					Control.TextContainer.Size = new CGSize(9999999, float.MaxValue); 
 				}
 			}
 		}
@@ -407,11 +425,7 @@ namespace Eto.Mac.Forms.Controls
 
 		public void Append(string text, bool scrollToCursor)
 		{
-			// get NSString object so we don't have to marshal the entire string to get its length
-			var stringValuePtr = Messaging.IntPtr_objc_msgSend(Control.Handle, selGetString);
-			var str = Runtime.GetNSObject<NSString>(stringValuePtr);
-
-			var range = new NSRange(str != null ? str.Length : 0, 0);
+			var range = new NSRange(TextLength, 0);
 			Control.Replace(range, text);
 			range.Location += text.Length;
 			Control.SetSelectedRange(range);
@@ -443,15 +457,6 @@ namespace Eto.Mac.Forms.Controls
 			get { return Widget; }
 		}
 
-		public void PerformLayout()
-		{
-			if (Wrap)
-			{
-				// set width of content to the size of the control when wrapping
-				Control.TextContainer.ContainerSize = new CGSize(Scroll.DocumentVisibleRect.Size.Width, float.MaxValue);
-			}
-		}
-
 		public TextReplacements TextReplacements
 		{
 			get
@@ -479,6 +484,49 @@ namespace Eto.Mac.Forms.Controls
 		public TextReplacements SupportedTextReplacements
 		{
 			get { return TextReplacements.Quote | TextReplacements.Text | TextReplacements.Dash | TextReplacements.Spelling; }
+		}
+
+		public BorderType Border
+		{
+			get => Scroll.BorderType.ToEto();
+			set => Scroll.BorderType = value.ToNS();
+		}
+
+		public int TextLength => (int)Control.TextStorage.Length;
+
+		public void ScrollTo(Range<int> range)
+		{
+			var nsRange = range.ToNS();
+			Control.LayoutManager.EnsureLayoutForCharacterRange(nsRange);
+			Control.ScrollRangeToVisible(nsRange);
+		}
+
+		public void ScrollToStart()
+		{ 
+			Control.LayoutManager.EnsureLayoutForCharacterRange(new NSRange(0, Control.TextStorage.Length));
+			Control.ScrollRectToVisible(new CGRect(GetScrollX(), 0, 1, 1));
+		}
+
+		nfloat GetScrollX() => Control.UserInterfaceLayoutDirection switch
+		{
+			NSUserInterfaceLayoutDirection.RightToLeft => Control.Alignment switch
+			{
+				NSTextAlignment.Right => Control.Bounds.Left,
+				NSTextAlignment.Center => Control.Bounds.GetMidX() - Scroll.DocumentVisibleRect.Width / 2,
+				_ => Control.Bounds.Right,
+			},
+			_ => Control.Alignment switch
+			{
+				NSTextAlignment.Right => Control.Bounds.Right,
+				NSTextAlignment.Center => Control.Bounds.GetMidX() - Scroll.DocumentVisibleRect.Width / 2,
+				_ => Control.Bounds.Left,
+			},
+		};
+
+		public void ScrollToEnd()
+		{
+			Control.LayoutManager.EnsureLayoutForCharacterRange(new NSRange(0, Control.TextStorage.Length));
+			Control.ScrollPoint(new CGPoint(GetScrollX(), Control.Bounds.Bottom));
 		}
 	}
 }

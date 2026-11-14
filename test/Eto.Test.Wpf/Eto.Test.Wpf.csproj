@@ -1,14 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform(Windows))">net5.0-windows;net472</TargetFrameworks>
-    <TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform(Windows))">net472</TargetFrameworks>
-  </PropertyGroup>
-
-  <PropertyGroup>
+    <TargetFrameworks>net10.0-windows;net48</TargetFrameworks>
     <OutputType>WinExe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <ApplicationIcon>TestIcon.ico</ApplicationIcon>
+    <ApplicationIcon>..\Eto.Test\Images\EtoIcon.ico</ApplicationIcon>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Prefer32Bit>false</Prefer32Bit>
     <UseWPF>true</UseWPF>
@@ -19,7 +15,12 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(TargetFramework)'=='net472'">
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <WindowsPackageFormats>msi;setup;msix</WindowsPackageFormats>
+    <WindowsPackageRuntimeIdentifiers>win-x64;win-arm64</WindowsPackageRuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)'=='net48'">
     <Reference Include="System" />
     <Reference Include="System.Data" />
     <Reference Include="System.Drawing" />
@@ -37,7 +38,8 @@
   </ItemGroup>
   
   <ItemGroup>
-    <Resource Include="TestIcon.ico" />
+    <Using Include="System.Windows" Alias="sw" />
+    <Using Include="System.Windows.Controls" Alias="swc" />
   </ItemGroup>
   
   <ItemGroup>
@@ -56,12 +58,12 @@
   </ItemGroup>
   
   <ItemGroup>
-    <PackageReference Include="NUnit" Version="3.12.0" />
-  	<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0" PrivateAssets="all" />
-  	<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.705.50" />
+    <PackageReference Include="NUnit" Version="4.6.1" />
+  	<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.1938.49" />
   </ItemGroup>
   <ItemGroup>
     <Service Include="{82A7F48D-3B50-4B1E-B82E-3ADA8210C358}" />
   </ItemGroup>
 
+  <Import Project="..\..\src\Shared\build\Windows.targets" />
 </Project>

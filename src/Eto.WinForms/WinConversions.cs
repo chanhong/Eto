@@ -1,13 +1,5 @@
-using System;
-using System.Globalization;
-using Eto.Drawing;
-using Eto.Forms;
 using Eto.WinForms.Drawing;
-using sd = System.Drawing;
 using sdp = System.Drawing.Printing;
-using sd2 = System.Drawing.Drawing2D;
-using swf = System.Windows.Forms;
-using sdi = System.Drawing.Imaging;
 using Eto.WinForms.Forms.Printing;
 using Eto.WinForms.Forms;
 
@@ -211,12 +203,17 @@ namespace Eto.WinForms
 
 		public static sd.FontStyle ToSD(this FontTypeface typeface)
 		{
+			if (typeface == null)
+				return sd.FontStyle.Regular;
 			return FontTypefaceHandler.GetControl(typeface);
 		}
 
 		public static sd.Font ToSDFont(this FontTypeface typeface, float size)
 		{
-			return new sd.Font(typeface.Family.ToSD(), size, typeface.ToSD());
+			var typefaceHandler = typeface?.Handler as FontTypefaceHandler;
+			if (typefaceHandler == null)
+				return null;
+			return new sd.Font(typefaceHandler.SDFontFamily, size, typeface.ToSD());
 		}
 
 		public static sd.Font ToSD(this SystemFont systemFont)
@@ -224,15 +221,15 @@ namespace Eto.WinForms
 			switch (systemFont)
 			{
 				case SystemFont.Default:
-					return sd.SystemFonts.DefaultFont;
+					return swf.Control.DefaultFont;
 				case SystemFont.User:
-					return sd.SystemFonts.DefaultFont;
+					return swf.Control.DefaultFont;
 				case SystemFont.Bold:
-					return new sd.Font(sd.SystemFonts.DefaultFont, sd.FontStyle.Bold);
+					return new sd.Font(swf.Control.DefaultFont, sd.FontStyle.Bold);
 				case SystemFont.TitleBar:
 					return sd.SystemFonts.CaptionFont;
 				case SystemFont.ToolTip:
-					return sd.SystemFonts.DefaultFont;
+					return swf.Control.DefaultFont;
 				case SystemFont.Label:
 					return sd.SystemFonts.DialogFont;
 				case SystemFont.MenuBar:
@@ -874,6 +871,32 @@ namespace Eto.WinForms
 		}
 
 		public static swf.Cursor ToSwf(this Cursor cursor) => CursorHandler.GetControl(cursor);
+		
+		public static bool IsPremultiplied(this sdi.PixelFormat format)
+		{
+			return format == sdi.PixelFormat.Format32bppPArgb
+				|| format == sdi.PixelFormat.Format64bppPArgb;
+		}
+		
+		public static Image ToEto(this sd.Image image)
+		{
+			if (image is sd.Bitmap bitmap)
+				return new Bitmap(new BitmapHandler(bitmap));
+			throw new NotSupportedException();
+		}
+		
+		public static GridCellType ToEto(this swf.DataGridViewHitTestType type)
+		{
+			switch (type)
+			{
+				case swf.DataGridViewHitTestType.ColumnHeader:
+					return GridCellType.ColumnHeader;
+				case swf.DataGridViewHitTestType.Cell:
+					return GridCellType.Data;
+				default:
+					return GridCellType.None;
+			}
+		}
 
 	}
 }

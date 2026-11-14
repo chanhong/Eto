@@ -1,11 +1,3 @@
-using System;
-using System.Reflection;
-using System.Linq;
-using System.Collections.Generic;
-using System.Globalization;
-using Eto.Forms;
-
-
 #if PORTABLE
 using Portable.Xaml;
 using Portable.Xaml.Schema;
@@ -238,6 +230,24 @@ namespace Eto.Serialization.Xaml
 			if (this.UnderlyingType != null && UnderlyingType == typeof(PropertyStore))
 				return true;
 			return base.LookupIsAmbient();
+		}
+
+		protected override XamlTypeInvoker LookupInvoker()
+		{
+			if (UnderlyingType == typeof(PropertyStore))
+				return new PropertyStoreInvoker(this);
+			return base.LookupInvoker();
+		}
+
+		class PropertyStoreInvoker : XamlTypeInvoker
+		{
+			public PropertyStoreInvoker(XamlType type)
+				: base(type)
+			{
+			}
+
+			// reloading into the same instance (e.g. hot reload) sets the same keys again
+			public override void AddToDictionary(object instance, object key, object item) => ((PropertyStore)instance)[key] = item;
 		}
 
 		protected override XamlMember LookupMember(string name, bool skipReadOnlyCheck)

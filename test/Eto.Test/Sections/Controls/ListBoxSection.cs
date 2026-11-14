@@ -1,8 +1,3 @@
-using Eto.Forms;
-using Eto.Drawing;
-using System.Collections.Generic;
-using System.Collections;
-
 namespace Eto.Test.Sections.Controls
 {
 	[Section("Controls", typeof(ListBox))]
@@ -14,7 +9,8 @@ namespace Eto.Test.Sections.Controls
 
 			layout.AddRow(new Label { Text = "Default" }, Default());
 
-			layout.AddRow(new Label { Text = "Virtual list, with Icons" }, WithIcons());
+			if (Platform.Supports<Icon>())
+				layout.AddRow(new Label { Text = "Virtual list, with Icons" }, WithIcons());
 
 			if (Platform.Supports<ContextMenu>())
 				layout.AddRow(new Label { Text = "Context Menu" }, WithContextMenu());
@@ -28,7 +24,8 @@ namespace Eto.Test.Sections.Controls
 		{
 			var control = new ListBox
 			{
-				Size = new Size(100, 150)
+				Size = new Size(100, 150),
+				Border = BorderType.None
 			};
 			LogEvents(control);
 

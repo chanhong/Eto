@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;netstandard1.0</TargetFrameworks>
-    <DefineConstants>$(DefineConstants);PCL</DefineConstants>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
   </PropertyGroup>
   
   <PropertyGroup>
@@ -12,20 +11,19 @@
     <PackageDescription>
 Eto.Json allows you to load json UI definitions for the Eto.Forms framework
 
-To get more information about how to get started, read the wiki:
+To get more information about how to get started, read the documentation:
 
-https://github.com/picoe/Eto/wiki
+https://eto.picoe.ca
     </PackageDescription>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Eto\TypeHelper.cs" />
     <None Remove="Eto.Serialization.Json.targets" />
     <None Include="Eto.Serialization.Json.targets" Pack="true" PackagePath="build" />
   </ItemGroup>
   
   <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
   </ItemGroup>
   
   <ItemGroup>

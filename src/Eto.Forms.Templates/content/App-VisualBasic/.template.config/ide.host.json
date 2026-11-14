@@ -1,0 +1,45 @@
+{
+	"$schema": "http://json.schemastore.org/vs-2017.3.host",
+	"unsupportedHosts": [
+		{
+			"id": "vs"
+		}
+	],
+	"symbolInfo": [
+		{
+			"id": "Mode",
+			"name": {
+				"text": "UI Definition"
+			},
+			"isVisible": true
+		},
+		{
+			"id": "SeparateProjects",
+			"name": {
+				"text": "Separate Platform Projects"
+			},
+			"isVisible": true
+		},
+		{
+			"id": "IncludeSolution",
+			"name": {
+				"text": "Include Solution File"
+			},
+			"isVisible": true
+		},
+		{
+			"id": "IncludeMacOS",
+			"name": {
+				"text": "Include macOS Workload Project"
+			},
+			"isVisible": true
+		},
+		{
+			"id": "IncludeWinForms",
+			"name": {
+				"text": "Include Windows Forms"
+			},
+			"isVisible": true
+		}
+	]
+}

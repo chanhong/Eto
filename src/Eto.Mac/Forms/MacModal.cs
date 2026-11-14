@@ -1,19 +1,3 @@
-using System;
-using Eto.Forms;
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#endif
-
 namespace Eto.Mac.Forms
 {
 	public class ModalEventArgs : EventArgs
@@ -112,7 +96,11 @@ namespace Eto.Mac.Forms
 			var result = (int)app.RunModalSession(Session);
 
 			// Give the main loop some time:
+#if MACOS_NET
+			NSRunLoop.Current.RunUntil(NSRunLoopMode.Default, NSDate.DistantFuture);
+#else
 			NSRunLoop.Current.RunUntil(NSRunLoop.NSDefaultRunLoopMode, NSDate.DistantFuture);
+#endif
 			var continues = result == (int)NSRun.ContinuesResponse;
 			if (Stopped && continues)
 			{
@@ -139,7 +127,11 @@ namespace Eto.Mac.Forms
 
 				RunSession();
 
+#if MACOS_NET
+				parent.EndSheet(NativeWindow);
+#else
 				NSApplication.SharedApplication.EndSheet(NativeWindow);
+#endif
 				NativeWindow.OrderOut(NativeWindow);
 			}
 			while (ShouldRestart());
@@ -177,48 +169,40 @@ namespace Eto.Mac.Forms
 
 		public static int Run(NSAlert view, Control parent)
 		{
-			int ret;
 			if (parent != null)
 			{
 				var window = parent.ControlObject as NSWindow;
 				if (window == null && parent.ControlObject is NSView)
 					window = ((NSView)parent.ControlObject).Window;
-				if (window == null || !view.RespondsToSelector(new Selector("beginSheetModalForWindow:modalDelegate:didEndSelector:contextInfo:")))
-					ret = (int)view.RunModal();
-				else
+				
+				if (window != null)
 				{
-					ret = 0;
-					NSApplication.SharedApplication.InvokeOnMainThread(delegate
+					view.BeginSheet(window, response =>
 					{
-						view.BeginSheet(window, new MacModal(), new Selector("alertDidEnd:returnCode:contextInfo:"), IntPtr.Zero);
-						ret = (int)NSApplication.SharedApplication.RunModalForWindow(window);
+						NSApplication.SharedApplication.StopModalWithCode((nint)response);
 					});
 				}
 			}
-			else
-				ret = (int)view.RunModal();
-			return ret;
+			
+			return (int)view.RunModal();
 		}
 
 		public static int Run(NSSavePanel panel, Control parent)
 		{
-			int ret;
 			if (parent != null)
 			{
 				var window = parent.ControlObject as NSWindow;
 				if (window == null && parent.ControlObject is NSView)
 					window = ((NSView)parent.ControlObject).Window;
-				if (window == null || !panel.RespondsToSelector(new Selector("beginSheetModalForWindow:completionHandler:")))
-					ret = (int)panel.RunModal();
-				else
+				
+				if (window != null && panel.RespondsToSelector(new Selector("beginSheetModalForWindow:completionHandler:")))
 				{
+					// show attached as a sheet
 					panel.BeginSheet(window, result => NSApplication.SharedApplication.StopModalWithCode(result));
-					ret = (int)NSApplication.SharedApplication.RunModalForWindow(window);
 				}
 			}
-			else
-				ret = (int)panel.RunModal();
-			return ret;
+
+			return (int)panel.RunModal();
 		}
 
 		public static void Run(Window window, NSWindow nativeWindow, out ModalEventArgs helper, bool isSheet = false)
@@ -241,7 +225,7 @@ namespace Eto.Mac.Forms
 			helper = new ModalEventArgs(window, theWindow, isSheet: true);
 			helper.StopAction = e =>
 			{
-				NSApplication.SharedApplication.EndSheet(e.NativeWindow);
+				parent.EndSheet(e.NativeWindow);
 				e.NativeWindow.OrderOut(e.NativeWindow);
 				NSApplication.SharedApplication.StopModal();
 				completed?.Invoke();

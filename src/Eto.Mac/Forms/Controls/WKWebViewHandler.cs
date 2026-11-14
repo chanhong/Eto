@@ -1,23 +1,7 @@
-using System;
-using Eto.Forms;
-using System.Linq;
-using Eto.Drawing;
-using System.Threading.Tasks;
-using System.Runtime.InteropServices;
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using wk = WebKit;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
+#if MONOMAC
 using wk = MonoMac.WebKit;
+#else
+using wk = WebKit;
 #endif
 
 namespace Eto.Mac.Forms.Controls
@@ -26,28 +10,48 @@ namespace Eto.Mac.Forms.Controls
 	{
 		public override NSView ContainerControl { get { return Control; } }
 
-		public wk.WKWebViewConfiguration Configuration { get; set; } = new wk.WKWebViewConfiguration();
+		public wk.WKWebViewConfiguration Configuration { get; set; }
+
+		public WKWebViewHandler()
+		{
+			Configuration = CreateConfiguration();
+		}
 
 		protected override wk.WKWebView CreateControl()
 		{
 			return new EtoWebView(this);
 		}
 
+		protected override SizeF GetNaturalSize(SizeF availableSize)
+		{
+			// WKWebView has no intrinsic size as its content is entirely up to the loaded document,
+			// so report a default size like other controls that can't be measured.
+			return new SizeF(100, 100);
+		}
+
 		public class EtoNavigationDelegate : wk.WKNavigationDelegate
 		{
+			public EtoNavigationDelegate()
+			{
+			}
+			public EtoNavigationDelegate(IntPtr handle)
+				: base(handle)
+			{
+			}
+			
 			WeakReference handler;
 			public WKWebViewHandler Handler { get => handler?.Target as WKWebViewHandler; set => handler = new WeakReference(value); }
 
 			public override void DidFinishNavigation(wk.WKWebView webView, wk.WKNavigation navigation)
 			{
 				var h = Handler;
-				if (h != null)
-				{
-					h.SetupContextMenu();
-					var args = new WebViewLoadedEventArgs(h.Url);
-					h.Callback.OnNavigated(h.Widget, args);
-					h.Callback.OnDocumentLoaded(h.Widget, args);
-				}
+				if (h == null || h.Widget.IsDisposed)
+					return;
+					
+				h.SetupContextMenu();
+				var args = new WebViewLoadedEventArgs(h.Url);
+				h.Callback.OnNavigated(h.Widget, args);
+				h.Callback.OnDocumentLoaded(h.Widget, args);
 			}
 
 			public override void DecidePolicy(wk.WKWebView webView, wk.WKNavigationAction navigationAction, Action<wk.WKNavigationActionPolicy> decisionHandler)
@@ -59,8 +63,13 @@ namespace Eto.Mac.Forms.Controls
 			public override void DecidePolicy(wk.WKWebView webView, wk.WKNavigationAction navigationAction, wk.WKWebpagePreferences preferences, Action<wk.WKNavigationActionPolicy, wk.WKWebpagePreferences> decisionHandler)
 			{
 				var h = Handler;
-				if (h == null)
+				if (h == null || h.Widget.IsDisposed)
+				{
+					// WebKit terminates the process when the decision handler is released without
+					// being called, so answer even when there is nothing left to render into.
+					decisionHandler(wk.WKNavigationActionPolicy.Cancel, preferences);
 					return;
+				}
 					
 				var requestUrl = navigationAction.Request.Url;
 				if (h.EnablePrintRouting && requestUrl.AbsoluteString == "eto:print")
@@ -89,7 +98,7 @@ namespace Eto.Mac.Forms.Controls
 			}
 
 		}
-
+		
 		protected override void Initialize()
 		{
 			Enabled = true;
@@ -110,7 +119,32 @@ namespace Eto.Mac.Forms.Controls
 				Handler = handler;
 				UIDelegate = new EtoUIDelegate { Handler = handler };
 			}
+			
+			public EtoWebView(IntPtr handle)
+				: base(handle)
+			{
+			}
+		}
 
+		class ScriptMessageHandler : wk.WKScriptMessageHandler
+		{
+			// WKUserContentController retains its script message handlers, and the content controller is kept
+			// alive by the configuration the handler itself owns. Referencing the handler strongly here would
+			// close that loop with a native retain in it, keeping the WebView alive forever.
+			readonly WeakReference handler;
+			WKWebViewHandler Handler => handler.Target as WKWebViewHandler;
+
+			public ScriptMessageHandler(WKWebViewHandler handler) : base()
+			{
+				this.handler = new WeakReference(handler);
+			}
+			public override void DidReceiveScriptMessage(wk.WKUserContentController userContentController, wk.WKScriptMessage message)
+			{
+				var h = Handler;
+				if (h == null || h.Widget.IsDisposed)
+					return;
+				h.Callback.OnMessageReceived(h.Widget, new WebViewMessageEventArgs(message.Body.ToString()));
+			}
 		}
 
 		class PromptDialog : Dialog<bool>
@@ -180,6 +214,7 @@ namespace Eto.Mac.Forms.Controls
 				completionHandler(result);
 			}
 
+#pragma warning disable CS0809, CS0672
 			public override void RunJavaScriptTextInputPanel(wk.WKWebView webView, string prompt, string defaultText, wk.WKFrameInfo frame, Action<string> completionHandler)
 			{
 				var dialog = new PromptDialog
@@ -191,6 +226,7 @@ namespace Eto.Mac.Forms.Controls
 				var result = dialog.ShowModal(Handler.Widget) ? dialog.Value : string.Empty;
 				completionHandler(result);
 			}
+#pragma warning restore CS0809, CS0672
 
 			public override void RunOpenPanel(wk.WKWebView webView, wk.WKOpenPanelParameters parameters, wk.WKFrameInfo frame, Action<NSUrl[]> completionHandler)
 			{
@@ -201,7 +237,7 @@ namespace Eto.Mac.Forms.Controls
 				}
 				else
 				{
-					completionHandler(null);
+					completionHandler(Array.Empty<NSUrl>());
 				}
 			}
 
@@ -244,10 +280,40 @@ namespace Eto.Mac.Forms.Controls
 					AddControlObserver(s_titleKey, TitleChangedObserver);
 					// todo. need to observe the Title property.
 					break;
+				case WebView.MessageReceivedEvent:
+					// Handled in constructor
+					break;
 				default:
 					base.AttachEvent(id);
 					break;
 			}
+		}
+
+		protected wk.WKWebViewConfiguration CreateConfiguration()
+		{
+			wk.WKUserContentController contentController = new();
+
+			// Handle messages sent from JS window.webkit.messageHandlers.__eto__.postMessage
+			contentController.AddScriptMessageHandler(new ScriptMessageHandler(this), "__eto__");
+
+			// Wrap the handler for x-plat consistency as window.eto.postMessage
+			const string wrapper = @"window.eto = { postMessage: function(message) { window.webkit.messageHandlers.__eto__.postMessage(message); } };";
+			contentController.AddUserScript(new wk.WKUserScript(new NSString(wrapper), wk.WKUserScriptInjectionTime.AtDocumentStart, false));
+
+			var configuration = new wk.WKWebViewConfiguration()
+			{
+				UserContentController = contentController
+			};
+
+			// Scheme handlers can only be set before the web view is created, so always register ours (10.13+).
+			if (configuration.RespondsToSelector(s_selSetUrlSchemeHandler))
+			{
+				resourceSchemeHandler = new ResourceSchemeHandler(this);
+				using var scheme = new NSString(ResourceScheme);
+				Messaging.void_objc_msgSend_IntPtr_IntPtr(configuration.Handle, s_selSetUrlSchemeHandler.Handle, resourceSchemeHandler.Handle, scheme.Handle);
+			}
+
+			return configuration;
 		}
 
 		static void TitleChangedObserver(ObserverActionEventArgs obj)
@@ -287,7 +353,19 @@ namespace Eto.Mac.Forms.Controls
 
 		public void LoadHtml(string html, Uri baseUri)
 		{
-			Control.LoadHtmlString(html, baseUri.ToNS());
+			// WebKit only reads files beside the page after loading their folder first, so serve them ourselves.
+			if (baseUri != null && baseUri.IsFile && SupportsResourceHandlers)
+			{
+				var baseDirectory = baseUri.LocalPath;
+				var htmlUri = AddResourceHandler(WebViewHtmlServer.Host, request => WebViewHtmlServer.Serve(html, baseDirectory, request));
+				Control.LoadRequest(new NSUrlRequest(htmlUri.ToNS()));
+				return;
+			}
+
+			var baseNSUrl = baseUri.ToNS();
+			if (baseNSUrl != null)
+				Control.LoadFileUrl(baseNSUrl, baseNSUrl);
+			Control.LoadHtmlString(html, baseNSUrl);
 		}
 
 		public void Stop() => Control.StopLoading();
@@ -331,10 +409,13 @@ namespace Eto.Mac.Forms.Controls
 			if (printOperation != null)
 			{
 				// RunOperation() doesn't work..
-				var printHelper = new PrintHelper();
-				printOperation.RunOperationModal(Control.Window, printHelper, PrintHelper.PrintOperationDidRunSelector, IntPtr.Zero);
+				// AppKit doesn't retain the delegate and this returns before the sheet closes, so keep it alive until the callback
+				_printHelper = new PrintHelper { Done = () => _printHelper = null };
+				printOperation.RunOperationModal(Control.Window, _printHelper, PrintHelper.PrintOperationDidRunSelector, IntPtr.Zero);
 			}
 		}
+
+		PrintHelper _printHelper;
 
 		class PrintHelper : NSObject
 		{
@@ -342,11 +423,112 @@ namespace Eto.Mac.Forms.Controls
 
 			public bool Success { get; set; }
 
+			public Action Done { get; set; }
+
 			[Export("printOperationDidRun:success:contextInfo:")]
 			public void PrintOperationDidRun(IntPtr printOperation, bool success, IntPtr contextInfo)
 			{
 				Success = success;
+				Done?.Invoke();
 			}
+		}
+
+		// WebKit only lets custom schemes be intercepted, so hosts are served from eto://host/ rather than https.
+		const string ResourceScheme = "eto";
+		static readonly Selector s_selSetUrlSchemeHandler = new Selector("setURLSchemeHandler:forURLScheme:");
+		static readonly Selector s_selRequest = new Selector("request");
+		static readonly Selector s_selDidReceiveResponse = new Selector("didReceiveResponse:");
+		static readonly Selector s_selDidReceiveData = new Selector("didReceiveData:");
+		static readonly Selector s_selDidFinish = new Selector("didFinish");
+
+		ResourceSchemeHandler resourceSchemeHandler;
+		Dictionary<string, Func<WebViewResourceRequest, WebViewResourceResponse>> resourceHandlers;
+
+		public bool SupportsResourceHandlers => resourceSchemeHandler != null;
+
+		public Uri AddResourceHandler(string host, Func<WebViewResourceRequest, WebViewResourceResponse> handler)
+		{
+			resourceHandlers ??= new Dictionary<string, Func<WebViewResourceRequest, WebViewResourceResponse>>(StringComparer.OrdinalIgnoreCase);
+			resourceHandlers[host] = handler;
+			return new Uri(ResourceScheme + "://" + host.ToLowerInvariant() + "/");
+		}
+
+		public void RemoveResourceHandler(string host) => resourceHandlers?.Remove(host);
+
+		// Bound by hand since MonoMac has no usable WKURLSchemeHandler binding.
+		[Adopts("WKURLSchemeHandler")]
+		class ResourceSchemeHandler : NSObject
+		{
+			// The configuration retains this, and the handler owns the configuration.
+			readonly WeakReference handler;
+
+			public ResourceSchemeHandler(WKWebViewHandler handler)
+			{
+				this.handler = new WeakReference(handler);
+			}
+
+			[Export("webView:startURLSchemeTask:")]
+			public void StartUrlSchemeTask(IntPtr webView, IntPtr task)
+			{
+				var h = handler.Target as WKWebViewHandler;
+				RespondToResourceTask(h?.resourceHandlers, task);
+			}
+
+			[Export("webView:stopURLSchemeTask:")]
+			public void StopUrlSchemeTask(IntPtr webView, IntPtr task)
+			{
+				// Tasks are answered as soon as they start, so there is never one to stop.
+			}
+		}
+
+		static void RespondToResourceTask(Dictionary<string, Func<WebViewResourceRequest, WebViewResourceResponse>> handlers, IntPtr task)
+		{
+			var request = Runtime.GetNSObject<NSUrlRequest>(Messaging.IntPtr_objc_msgSend(task, s_selRequest.Handle));
+			var url = request.Url;
+			var uri = new Uri(url.AbsoluteString);
+
+			var statusCode = 404;
+			var headers = new NSMutableDictionary();
+			byte[] content = null;
+			if (handlers != null && handlers.TryGetValue(uri.Host, out var handler))
+			{
+				try
+				{
+					var response = handler(new WebViewResourceRequest(uri, request.HttpMethod ?? "GET"));
+					if (response != null)
+					{
+						if (response.Content != null)
+						{
+							using var stream = new MemoryStream();
+							response.Content.CopyTo(stream);
+							response.Content.Dispose();
+							content = stream.ToArray();
+						}
+						statusCode = response.StatusCode;
+						if (!string.IsNullOrEmpty(response.ContentType))
+							headers[(NSString)"Content-Type"] = (NSString)response.ContentType;
+						foreach (var header in response.Headers)
+							headers[(NSString)header.Key] = (NSString)header.Value;
+					}
+				}
+				catch (Exception ex)
+				{
+					// Letting this escape the WebKit callback would crash the application.
+					Debug.WriteLine("WebView resource handler failed for " + uri + ":\n" + ex);
+					statusCode = 500;
+					headers.Clear();
+					content = null;
+				}
+			}
+
+			using var httpResponse = new NSHttpUrlResponse(url, statusCode, "HTTP/1.1", headers);
+			Messaging.void_objc_msgSend_IntPtr(task, s_selDidReceiveResponse.Handle, httpResponse.Handle);
+			if (content?.Length > 0)
+			{
+				using var data = NSData.FromArray(content);
+				Messaging.void_objc_msgSend_IntPtr(task, s_selDidReceiveData.Handle, data.Handle);
+			}
+			Messaging.void_objc_msgSend(task, s_selDidFinish.Handle);
 		}
 
 		static readonly object BrowserContextMenuEnabled_Key = new object();
@@ -379,12 +561,12 @@ namespace Eto.Mac.Forms.Controls
 			if (!BrowserContextMenuEnabled)
 			{
 				// no way to do this through code.. 
-				ExecuteScript("document.body.setAttribute('oncontextmenu', 'event.preventDefault();');");
+				var task = ExecuteScriptAsync("document.body.setAttribute('oncontextmenu', 'event.preventDefault();');");
 			}
 			if (EnablePrintRouting)
 			{
 				// no way to do this through code.. 
-				ExecuteScript(@"window.print = function () { window.location = 'eto:print'; };");
+				var task = ExecuteScriptAsync(@"window.print = function () { window.location = 'eto:print'; };");
 			}
 
 		}

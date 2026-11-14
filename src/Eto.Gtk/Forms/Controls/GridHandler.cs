@@ -1,10 +1,5 @@
-using System;
-using Eto.Forms;
-using System.Linq;
-using System.Collections.Generic;
 using Eto.GtkSharp.Forms.Cells;
 using Eto.GtkSharp.Forms.Menu;
-using Eto.Drawing;
 
 namespace Eto.GtkSharp.Forms.Controls
 {
@@ -12,29 +7,34 @@ namespace Eto.GtkSharp.Forms.Controls
 	{
 		internal static readonly object Border_Key = new object();
 		internal static readonly object RowDataColumn_Key = new object();
+		internal static readonly object ItemDataColumn_Key = new object();
 		internal static readonly object AllowColumnReordering_Key = new object();
 		internal static readonly object AllowEmptySelection_Key = new object();
 	}
 
-	public abstract class GridHandler<TWidget, TCallback> : GtkControl<Gtk.ScrolledWindow, TWidget, TCallback>, Grid.IHandler, ICellDataSource, IGridHandler
+	public abstract class GridHandler<TWidget, TCallback> : GtkControl<Gtk.TreeView, TWidget, TCallback>, Grid.IHandler, ICellDataSource, IGridHandler
 		where TWidget : Grid
 		where TCallback : Grid.ICallback
 	{
 		ColumnCollection columns;
-		ContextMenu contextMenu;
-		readonly Dictionary<int, int> columnMap = new Dictionary<int, int>();
+		Gtk.TreeViewColumn spacingColumn;
+		readonly Dictionary<int, (int column, GLib.GType type)> columnMap = new();
 
 		protected bool SkipSelectedChange { get; set; }
 
-		protected Gtk.TreeView Tree { get; private set; }
+		bool suppressFocusSelection;
 
-		Gtk.TreeView IGridHandler.Tree => Tree;
+		public Gtk.ScrolledWindow ScrolledWindow { get; private set; }
+		public EtoEventBox Box { get; private set; }
 
-		protected Dictionary<int, int> ColumnMap { get { return columnMap; } }
+		Gtk.TreeView IGridHandler.Tree => Control;
 
-		public override Gtk.Widget EventControl => Tree;
+		protected Dictionary<int, (int column, GLib.GType type)> ColumnMap { get { return columnMap; } }
 
-		public override Gtk.Widget DragControl => Tree;
+		public override Gtk.Widget ContainerControl => ScrolledWindow;
+
+		public override bool ShouldTranslatePoints => true;
+
 
 		class EtoScrolledWindow : Gtk.ScrolledWindow
 		{
@@ -63,6 +63,13 @@ namespace Eto.GtkSharp.Forms.Controls
 			{
 				base.OnGetPreferredHeight(out minimum_height, out natural_height);
 				var h = Handler;
+
+				// GtkTreeView under-reports its height until it has been mapped; make the natural height
+				// account for all rows so the grid measures correctly before it is ever shown (both when
+				// measured directly and when measured as part of a parent container).
+				if (h is GridHandler<TWidget, TCallback> gridHandler)
+					natural_height = Math.Max(natural_height, gridHandler.CalculateContentHeight());
+
 				if (h != null)
 				{
 					var size = h.UserPreferredSize;
@@ -78,7 +85,7 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		protected GridHandler()
 		{
-			Control = new EtoScrolledWindow
+			ScrolledWindow = new EtoScrolledWindow
 			{
 				Handler = this,
 				ShadowType = Gtk.ShadowType.In,
@@ -87,6 +94,8 @@ namespace Eto.GtkSharp.Forms.Controls
 				PropagateNaturalWidth = true
 #endif
 			};
+			// Box = new EtoEventBox();
+			// ScrolledWindow.Add(Box);
 		}
 
 		protected abstract ITreeModelImplementor CreateModelImplementor();
@@ -95,51 +104,147 @@ namespace Eto.GtkSharp.Forms.Controls
 		{
 			SkipSelectedChange = true;
 			var selected = SelectedRows;
-			Tree.Model = new Gtk.TreeModelAdapter(CreateModelImplementor());
+			Control.Model = new Gtk.TreeModelAdapter(CreateModelImplementor());
 			SetSelectedRows(selected);
 			SkipSelectedChange = false;
+		}
+		
+		protected (double? hscroll, double? vscroll) SaveScrollState()
+		{
+			var hscrollbar = ScrolledWindow.HScrollbar as Gtk.Scrollbar;
+			var vscrollbar = ScrolledWindow.VScrollbar as Gtk.Scrollbar;
+			var hscroll = hscrollbar?.Value;
+			var vscroll = vscrollbar?.Value;
+			return (hscroll, vscroll);
+		}
+		
+		protected void RestoreScrollState((double? hscroll, double? vscroll) state)
+		
+		{
+			var hscrollbar = ScrolledWindow.HScrollbar as Gtk.Scrollbar;
+			var vscrollbar = ScrolledWindow.VScrollbar as Gtk.Scrollbar;
+			if (state.hscroll != null)
+				hscrollbar.Value = state.hscroll.Value;
+			if (state.vscroll != null)
+				vscrollbar.Value = state.vscroll.Value;
 		}
 
 		protected override void Initialize()
 		{
-			Tree = new Gtk.TreeView();
-			UpdateModel();
-			Tree.HeadersVisible = true;
-			Control.Add(Tree);
+			Control = new Gtk.TreeView();
+			// always need this one so the last column doesn't expand
+			Control.AppendColumn(spacingColumn = new Gtk.TreeViewColumn());
+			Control.ColumnDragFunction = Connector.HandleColumnDrag;
 
-			Tree.Events |= Gdk.EventMask.ButtonPressMask;
-			Tree.ButtonPressEvent += Connector.HandleButtonPress;
+			UpdateModel();
+			Control.HeadersVisible = true;
+			ScrolledWindow.Child = Control;
 
 			columns = new ColumnCollection { Handler = this };
 			columns.Register(Widget.Columns);
 			base.Initialize();
 
-			Widget.MouseDown += Widget_MouseDown;
+			// note: these must go through the (weakly referencing) connector, otherwise the native
+			// signal keeps a strong reference to this handler and the control can never be collected.
+			Control.Selection.Changed += Connector.HandlePreventEmptySelection;
+			Control.Selection.SelectFunction = Connector.HandleSelectFunction;
+			Control.FocusGrabbed += Connector.HandleFocusToCursorBefore;
+			Control.FocusGrabbed += Connector.HandleFocusToCursorAfter;
+			Control.FocusInEvent += Connector.HandleFocusInToCursorBefore;
+			Control.FocusInEvent += Connector.HandleFocusInToCursorAfter;
 
+			Control.QueryTooltip += Connector.HandleQueryTooltip;
+			Control.HasTooltip = true;
+
+			HandleEvent(Eto.Forms.Control.MouseDownEvent);			
 		}
 
-		protected new GridConnector Connector { get { return (GridConnector)base.Connector; } }
+		// GTK moves the cursor to the first row when the tree is first focused, selecting it when in single/browse
+		// mode. Every other platform leaves the selection empty, so veto that one selection via the select function
+		// and keep the cursor, which is what keyboard navigation needs.
+		void BeginFocusToCursor() => suppressFocusSelection = AllowEmptySelection && Control.Selection.CountSelectedRows() == 0;
 
-		protected override WeakConnector CreateConnector()
+		void EndFocusToCursor() => suppressFocusSelection = false;
+
+		void PreventEmptySelection()
 		{
-			return new GridConnector();
+			// Prevent unselecting last selected item.
+			if (!AllowEmptySelection && AllowMultipleSelection && Control.Selection.CountSelectedRows() == 0)
+			{
+				Control.GetCursor(out var cursorRow, out _);
+				if (cursorRow != null)
+				{
+					Control.Selection.SelectPath(cursorRow);
+				}
+			}
 		}
+
+		void OnQueryTooltip(object o, Gtk.QueryTooltipArgs args)
+		{
+			var offset = 0;
+			if (Control.HeadersVisible)
+			{
+				Control.BinWindow.GetPosition(out var bx, out offset);
+			}
+			var isData = Control.GetPathAtPos((int)args.X, (int)args.Y - offset, out var path, out var col);
+			
+			if (isData)
+			{
+				var columnIndex = GetColumnIndex(col);
+				if (columnIndex != -1)
+				{
+					var etoColumn = Widget.Columns[columnIndex];
+					if (etoColumn.CellToolTipBinding != null)
+					{
+						var item = GetItem(path);
+						var cellRect = Control.GetCellArea(path, col);
+						cellRect.Y += offset;
+						args.Tooltip.Text = etoColumn.CellToolTipBinding.GetValue(item);
+						args.Tooltip.TipArea = cellRect;
+						args.RetVal = true;
+					}
+				}
+			}
+		}
+
+		protected new GridConnector Connector => (GridConnector)base.Connector;
+
+		protected override WeakConnector CreateConnector() => new GridConnector();
 
 		protected class GridConnector : GtkControlConnector
 		{
 			public new GridHandler<TWidget, TCallback> Handler { get { return (GridHandler<TWidget, TCallback>)base.Handler; } }
 
+			public void HandlePreventEmptySelection(object sender, EventArgs e) => Handler?.PreventEmptySelection();
+
+			public bool HandleSelectFunction(Gtk.TreeSelection selection, Gtk.ITreeModel model, Gtk.TreePath path, bool pathCurrentlySelected) => Handler?.suppressFocusSelection != true;
+
 			[GLib.ConnectBefore]
-			public void HandleButtonPress(object o, Gtk.ButtonPressEventArgs args)
+			public void HandleFocusToCursorBefore(object sender, EventArgs e) => Handler?.BeginFocusToCursor();
+
+			public void HandleFocusToCursorAfter(object sender, EventArgs e) => Handler?.EndFocusToCursor();
+
+			[GLib.ConnectBefore]
+			public void HandleFocusInToCursorBefore(object sender, Gtk.FocusInEventArgs args) => Handler?.BeginFocusToCursor();
+
+			public void HandleFocusInToCursorAfter(object sender, Gtk.FocusInEventArgs args) => Handler?.EndFocusToCursor();
+
+			public void HandleQueryTooltip(object o, Gtk.QueryTooltipArgs args) => Handler?.OnQueryTooltip(o, args);
+
+			[GLib.ConnectBefore]
+			public override void HandleButtonPressEvent(object sender, Gtk.ButtonPressEventArgs args)
 			{
-				var treeview = o as Gtk.TreeView;
+				base.HandleButtonPressEvent(sender, args);
+
+				if (!Equals(args.RetVal, true))
+					OnTreeButtonPress(sender, args);
 
 				// Gtk default behaviout for multiselect treeview is that
 				// left and right click act the same, which is problematic
 				// when it comes to user selecting multiple items and than
 				// right clicking to find only one item remains selected
 				// or if ctrl is held the current item gets unselected.
-				if (args.Event.Button == 3 && treeview != null)
+				if (!Equals(args.RetVal, true) && args.Event.Button == 3 && sender is Gtk.TreeView treeview)
 				{
 					Gtk.TreeViewDropPosition pos;
 					Gtk.TreePath path;
@@ -158,14 +263,6 @@ namespace Eto.GtkSharp.Forms.Controls
 								args.RetVal = true;
 						}
 					}
-				}
-
-				var handler = Handler;
-				if (handler.contextMenu != null && args.Event.Button == 3 && args.Event.Type == Gdk.EventType.ButtonPress)
-				{
-					var menu = ((ContextMenuHandler)handler.contextMenu.Handler).Control;
-					menu.Popup();
-					menu.ShowAll();
 				}
 			}
 
@@ -193,19 +290,21 @@ namespace Eto.GtkSharp.Forms.Controls
 
 			public void HandleGridSelectionChanged(object sender, EventArgs e)
 			{
-				if (!Handler.SkipSelectedChange)
+				var handler = Handler;
+				if (handler == null)
+					return;
+				if (!handler.SkipSelectedChange)
 				{
-					var selected = Handler.SelectedRows.ToArray();
+					var selected = handler.SelectedRows.ToArray();
 					if (!ArraysEqual(selectedRows, selected))
 					{
-						Handler.Callback.OnSelectionChanged(Handler.Widget, EventArgs.Empty);
+						handler.Callback.OnSelectionChanged(handler.Widget, EventArgs.Empty);
 						selectedRows = selected;
 					}
 				}
-			}
+			}			
 
-			[GLib.ConnectBefore]
-			public virtual void OnTreeButtonPress(object sender, Gtk.ButtonPressEventArgs e)
+			void OnTreeButtonPress(object sender, Gtk.ButtonPressEventArgs e)
 			{
 				if (e.Event.Type == Gdk.EventType.TwoButtonPress || e.Event.Type == Gdk.EventType.ThreeButtonPress)
 					return;
@@ -217,20 +316,20 @@ namespace Eto.GtkSharp.Forms.Controls
 				Gtk.TreeViewColumn clickedColumn;
 
 				// Get path and column from mouse position
-				h.Tree.GetPathAtPos((int)e.Event.X, (int)e.Event.Y, out path, out clickedColumn);
+				h.Control.GetPathAtPos((int)e.Event.X, (int)e.Event.Y, out path, out clickedColumn);
 				if (path == null || clickedColumn == null)
 					return;
 
 				var rowIndex = h.GetRowIndexOfPath(path);
-				var columnIndex = h.GetColumnOfItem(clickedColumn);
+				var columnIndex = h.GetColumnIndex(clickedColumn);
 				var item = h.GetItem(path);
 				var column = columnIndex == -1 || columnIndex >= h.Widget.Columns.Count ? null : h.Widget.Columns[columnIndex];
 
 				var loc = h.PointFromScreen(new PointF((float)e.Event.XRoot, (float)e.Event.YRoot));
 
-				if (ReferenceEquals(h.Tree.ExpanderColumn, clickedColumn))
+				if (ReferenceEquals(h.Control.ExpanderColumn, clickedColumn))
 				{
-					var cellArea = h.Tree.GetCellArea(path, clickedColumn);
+					var cellArea = h.Control.GetCellArea(path, clickedColumn);
 					if (loc.X < cellArea.Left && loc.X >= cellArea.Left - 18) // how do we get the size of the expander?
 					{
 						// clicked on the expander, don't fire the CellClick event
@@ -239,6 +338,23 @@ namespace Eto.GtkSharp.Forms.Controls
 				}
 
 				h.Callback.OnCellClick(h.Widget, new GridCellMouseEventArgs(column, rowIndex, columnIndex, item, e.Event.ToEtoMouseButtons(), e.Event.State.ToEtoKey(), loc));
+			}
+
+			[GLib.ConnectBefore]
+			public virtual void HandleGridColumnsChanged(object sender, EventArgs e)
+			{
+				var h = Handler;
+				if (h == null)
+					return;
+				h.Callback.OnColumnOrderChanged(h.Widget, new GridColumnEventArgs(h.Widget.Columns.First()));
+			}
+
+			public virtual bool HandleColumnDrag(Gtk.TreeView tree_view, Gtk.TreeViewColumn column, Gtk.TreeViewColumn prev_column, Gtk.TreeViewColumn next_column)
+			{
+				var h = Handler;
+				if (h == null)
+					return true;
+				return prev_column != h.spacingColumn;
 			}
 		}
 
@@ -250,23 +366,28 @@ namespace Eto.GtkSharp.Forms.Controls
 				case Grid.CellEditingEvent:
 				case Grid.CellEditedEvent:
 				case Grid.CellFormattingEvent:
+				case Grid.RowFormattingEvent:
+				case Grid.ColumnWidthChangedEvent:
 					SetupColumnEvents();
 					break;
 				case Grid.CellClickEvent:
-					Tree.ButtonPressEvent += Connector.OnTreeButtonPress;
+					HandleEvent(Eto.Forms.Control.MouseDownEvent);
 					break;
 				case Grid.CellDoubleClickEvent:
-					Tree.RowActivated += (sender, e) =>
+					Control.RowActivated += (sender, e) =>
 					{
 						var rowIndex = GetRowIndexOfPath(e.Path);
-						var columnIndex = GetColumnOfItem(e.Column);
+						var columnIndex = GetColumnIndex(e.Column);
 						var item = GetItem(e.Path);
 						var column = columnIndex == -1 ? null : Widget.Columns[columnIndex];
-						Callback.OnCellClick(Widget, new GridCellMouseEventArgs(column, rowIndex, columnIndex, item, Mouse.Buttons, Keyboard.Modifiers, PointFromScreen(Mouse.Position)));
+						Callback.OnCellDoubleClick(Widget, new GridCellMouseEventArgs(column, rowIndex, columnIndex, item, Mouse.Buttons, Keyboard.Modifiers, PointFromScreen(Mouse.Position)));
 					};
 					break;
 				case Grid.SelectionChangedEvent:
-					Tree.Selection.Changed += Connector.HandleGridSelectionChanged;
+					Control.Selection.Changed += Connector.HandleGridSelectionChanged;
+					break;
+				case Grid.ColumnOrderChangedEvent:
+					Control.ColumnsChanged += Connector.HandleGridColumnsChanged;
 					break;
 				default:
 					base.AttachEvent(id);
@@ -278,25 +399,30 @@ namespace Eto.GtkSharp.Forms.Controls
 		public override void OnLoadComplete(EventArgs e)
 		{
 			base.OnLoadComplete(e);
-			Tree.AppendColumn(new Gtk.TreeViewColumn());
 			UpdateColumns();
+		}
+
+		protected override void RealizedSetup()
+		{
+			base.RealizedSetup();
+			// Rows measured before the cells were added (e.g. by a preferred size request) keep that height,
+			// as GTK ignores resize requests until realized. With some themes (e.g. Breeze) that's too short.
+			foreach (var column in Control.Columns)
+				column.QueueResize();
 		}
 
 		void SetupColumnEvents()
 		{
 			if (!Widget.Loaded)
 				return;
-			foreach (var col in Widget.Columns.Select(r => r.Handler).OfType<IGridColumnHandler>())
+			foreach (var col in Widget.Columns.Select(r => r.Handler).OfType<GridColumnHandler>())
 			{
 				col.SetupEvents();
 			}
 		}
 
-		public int RowDataColumn
-		{
-			get { return Widget.Properties.Get<int>(GridHandler.RowDataColumn_Key); }
-			private set { Widget.Properties.Set(GridHandler.RowDataColumn_Key, value); }
-		}
+		public int RowDataColumn => 0;
+		public int ItemDataColumn => 1;
 
 		protected virtual void UpdateColumns()
 		{
@@ -304,15 +430,23 @@ namespace Eto.GtkSharp.Forms.Controls
 				return;
 			columnMap.Clear();
 			int columnIndex = 0;
-			int dataIndex = 0;
-			RowDataColumn = dataIndex++;
-
-			foreach (var col in Widget.Columns.Select(r => r.Handler).OfType<IGridColumnHandler>())
+			int dataIndex = 2; // skip RowDataColumn and ItemDataColumn
+			
+			for (int i = 0; i < Widget.Columns.Count; i++)
 			{
-				col.Control.Reorderable = AllowColumnReordering;
-				col.BindCell(this, this, columnIndex++, ref dataIndex);
-				col.SetupEvents();
+				var col = Widget.Columns[i];
+				var colHandler = (GridColumnHandler)col.Handler;
+				colHandler.Control.Reorderable = AllowColumnReordering;
+				colHandler.SetupCell(this, this, columnIndex++, ref dataIndex);
+				if (i == 0)
+					Control.ExpanderColumn = colHandler.Control;
 			}
+			
+			foreach (var col in Widget.Columns.OrderBy(r => r.DisplayIndex))
+			{
+				((GridColumnHandler)col.Handler).SetDisplayIndex();
+			}
+			
 		}
 
 		class ColumnCollection : EnumerableChangedHandler<GridColumn, GridColumnCollection>
@@ -322,33 +456,35 @@ namespace Eto.GtkSharp.Forms.Controls
 			public override void AddItem(GridColumn item)
 			{
 				var colhandler = (GridColumnHandler)item.Handler;
-				Handler.Tree.AppendColumn(colhandler.Control);
+#if GTKCORE
+				Handler.Control.InsertColumn(colhandler.Control, (int)Handler.Control.NColumns - 1);
+#else
+				Handler.Control.InsertColumn(colhandler.Control, Count);
+#endif
 				Handler.UpdateColumns();
 			}
 
 			public override void InsertItem(int index, GridColumn item)
 			{
 				var colhandler = (GridColumnHandler)item.Handler;
-				if (Handler.Tree.Columns.Length > 0)
-					Handler.Tree.InsertColumn(colhandler.Control, index);
-				else
-					Handler.Tree.AppendColumn(colhandler.Control);
+				Handler.Control.InsertColumn(colhandler.Control, index);
 				Handler.UpdateColumns();
 			}
 
 			public override void RemoveItem(int index)
 			{
 				var colhandler = (GridColumnHandler)Handler.Widget.Columns[index].Handler;
-				Handler.Tree.RemoveColumn(colhandler.Control);
+				Handler.Control.RemoveColumn(colhandler.Control);
 				Handler.UpdateColumns();
 			}
 
 			public override void RemoveAllItems()
 			{
-				foreach (var col in Handler.Tree.Columns)
+				foreach (var col in Handler.Control.Columns)
 				{
-					Handler.Tree.RemoveColumn(col);
+					Handler.Control.RemoveColumn(col);
 				}
+				Handler.Control.AppendColumn(Handler.spacingColumn);
 				Handler.UpdateColumns();
 			}
 
@@ -356,17 +492,17 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		public bool ShowHeader
 		{
-			get { return Tree.HeadersVisible; }
-			set { Tree.HeadersVisible = value; }
+			get { return Control.HeadersVisible; }
+			set { Control.HeadersVisible = value; }
 		}
 
 
 		public bool AllowColumnReordering
 		{
-			get { return Widget.Properties.Get<bool>(GridHandler.AllowColumnReordering_Key, true); }
+			get { return Widget.Properties.Get<bool>(GridHandler.AllowColumnReordering_Key, false); }
 			set
 			{
-				Widget.Properties.Set(GridHandler.AllowColumnReordering_Key, value, true);
+				Widget.Properties.Set(GridHandler.AllowColumnReordering_Key, value, false);
 				UpdateColumns();
 			}
 		}
@@ -381,14 +517,17 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		public abstract object GetItem(Gtk.TreePath path);
 
-		public object GetItem(int row)
+		public int GetColumnIndex(Gtk.TreeViewColumn item)
 		{
-			return GetItem(GetPathAtRow(row));
-		}
-
-		public int GetColumnOfItem(Gtk.TreeViewColumn item)
-		{
-			return Widget.Columns.Select(r => r.Handler as GridColumnHandler).Select(r => r.Control).ToList().IndexOf(item);
+			for (int i = 0; i < Widget.Columns.Count; i++)
+			{
+				GridColumn col = Widget.Columns[i];
+				if (col.Handler is GridColumnHandler handler && ReferenceEquals(handler.Control, item))
+				{
+					return i;
+				}
+			}
+			return -1;
 		}
 
 		public virtual int GetRowIndexOfPath(Gtk.TreePath path)
@@ -411,15 +550,9 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		public abstract Gtk.TreePath GetPathAtRow(int row);
 
-		public void SetColumnMap(int dataIndex, int column)
+		public void SetColumnMap(int dataIndex, int column, GLib.GType type)
 		{
-			columnMap[dataIndex] = column;
-		}
-
-		public ContextMenu ContextMenu
-		{
-			get { return contextMenu; }
-			set { contextMenu = value; }
+			columnMap[dataIndex] = (column, type);
 		}
 
 		public void EndCellEditing(Gtk.TreePath path, int column)
@@ -443,24 +576,27 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		public bool AllowMultipleSelection
 		{
-			get { return Tree.Selection.Mode == Gtk.SelectionMode.Multiple; }
-			set { Tree.Selection.Mode = value ? Gtk.SelectionMode.Multiple : Gtk.SelectionMode.Browse; }
+			get { return Control.Selection.Mode == Gtk.SelectionMode.Multiple; }
+			set => SetSelectionMode(AllowEmptySelection, value);
 		}
 
 		public virtual IEnumerable<int> SelectedRows
 		{
 			get
 			{
-				return Tree.Selection.GetSelectedRows().Select(r => r.Indices[0]);
+				return Control.Selection.GetSelectedRows().Select(r => r.Indices[0]);
 			}
 			set
 			{
 				SkipSelectedChange = true;
 				SetSelectedRows(value);
 				SkipSelectedChange = false;
-				Callback.OnSelectionChanged(Widget, EventArgs.Empty);
+				TriggerSelectionChanged();
 			}
 		}
+
+		// Use when changing the selection ourselves, as the native Changed signal is suppressed in that case.
+		protected virtual void TriggerSelectionChanged() => Callback.OnSelectionChanged(Widget, EventArgs.Empty);
 
 		protected abstract void SetSelectedRows(IEnumerable<int> value);
 
@@ -472,44 +608,46 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		public void SelectAll()
 		{
-			Tree.Selection.SelectAll();
+			Control.Selection.SelectAll();
 		}
 
 		public void SelectRow(int row)
 		{
-			Tree.Selection.SelectIter(GetIterAtRow(row));
+			Control.Selection.SelectIter(GetIterAtRow(row));
 		}
 
 		public void UnselectRow(int row)
 		{
-			Tree.Selection.UnselectIter(GetIterAtRow(row));
+			Control.Selection.UnselectIter(GetIterAtRow(row));
 		}
 
 		public void UnselectAll()
 		{
-			Tree.Selection.UnselectAll();
+			Control.Selection.UnselectAll();
 		}
 
 		public void BeginEdit(int row, int column)
 		{
-			var nameColumn = Tree.Columns[column];
+			var nameColumn = Control.Columns[column];
+			if (nameColumn.Cells.Length == 0)
+				return;
 			var cellRenderer = nameColumn.Cells[0];
-			var path = Tree.Model.GetPath(GetIterAtRow(row));
-			Tree.Model.IterNChildren();
-			Tree.SetCursorOnCell(path, nameColumn, cellRenderer, true);
+			var path = Control.Model.GetPath(GetIterAtRow(row));
+			Control.Model.IterNChildren();
+			Control.SetCursorOnCell(path, nameColumn, cellRenderer, true);
 		}
 
 		public bool CommitEdit()
 		{
 			Gtk.TreePath path;
 			Gtk.TreeViewColumn column;
-			Tree.GetCursor(out path, out column);
+			Control.GetCursor(out path, out column);
 			if (path == null || column == null)
 				return true;
 
 			// This is a hack, but it works to commit editing.  Is there a better way?
-			if (Tree.FocusChild?.HasFocus == true)
-				Tree.ChildFocus(Gtk.DirectionType.TabForward);
+			if (Control.FocusChild?.HasFocus == true)
+				Control.ChildFocus(Gtk.DirectionType.TabForward);
 			return true;
 		}
 
@@ -517,33 +655,39 @@ namespace Eto.GtkSharp.Forms.Controls
 		{
 			Gtk.TreePath path;
 			Gtk.TreeViewColumn column;
-			Tree.GetCursor(out path, out column);
+			Control.GetCursor(out path, out column);
 			if (path == null || column == null)
 				return true;
 
 			// This is a hack, but it works to abort editing.  Is there a better way?
-			if (Tree.FocusChild?.HasFocus == true)
-				Tree.GrabFocus();
+			if (Control.FocusChild?.HasFocus == true)
+				Control.GrabFocus();
 			return true;
 		}
 
 		public void OnCellFormatting(GridCellFormatEventArgs args)
 		{
+			// var tooltipBinding = args.Column?.CellToolTipBinding;
+			// if (tooltipBinding != null && args is GtkGridCellFormatEventArgs macargs && macargs.View != null)
+			// 	macargs.View.ToolTip = tooltipBinding.GetValue(args.Item) ?? string.Empty;
+			
 			Callback.OnCellFormatting(Widget, args);
 		}
+
+		public void OnRowFormatting(GridRowFormatEventArgs args) => Callback.OnRowFormatting(Widget, args);
 
 		public void ScrollToRow(int row)
 		{
 			var path = this.GetPathAtRow(row);
-			var column = Tree.Columns.First();
-			Tree.ScrollToCell(path, column, false, 0, 0);
+			var column = Control.Columns.First();
+			Control.ScrollToCell(path, column, false, 0, 0);
 		}
 
 		public GridLines GridLines
 		{
 			get
 			{
-				switch (Tree.EnableGridLines)
+				switch (Control.EnableGridLines)
 				{
 					case Gtk.TreeViewGridLines.None:
 						return GridLines.None;
@@ -562,16 +706,16 @@ namespace Eto.GtkSharp.Forms.Controls
 				switch (value)
 				{
 					case GridLines.None:
-						Tree.EnableGridLines = Gtk.TreeViewGridLines.None;
+						Control.EnableGridLines = Gtk.TreeViewGridLines.None;
 						break;
 					case GridLines.Horizontal:
-						Tree.EnableGridLines = Gtk.TreeViewGridLines.Horizontal;
+						Control.EnableGridLines = Gtk.TreeViewGridLines.Horizontal;
 						break;
 					case GridLines.Vertical:
-						Tree.EnableGridLines = Gtk.TreeViewGridLines.Vertical;
+						Control.EnableGridLines = Gtk.TreeViewGridLines.Vertical;
 						break;
 					case GridLines.Both:
-						Tree.EnableGridLines = Gtk.TreeViewGridLines.Both;
+						Control.EnableGridLines = Gtk.TreeViewGridLines.Both;
 						break;
 					default:
 						throw new NotSupportedException();
@@ -582,7 +726,7 @@ namespace Eto.GtkSharp.Forms.Controls
 		public BorderType Border
 		{
 			get { return Widget.Properties.Get(GridHandler.Border_Key, BorderType.Bezel); }
-			set { Widget.Properties.Set(GridHandler.Border_Key, value, () => Control.ShadowType = value.ToGtk(), BorderType.Bezel); }
+			set { Widget.Properties.Set(GridHandler.Border_Key, value, () => ScrolledWindow.ShadowType = value.ToGtk(), BorderType.Bezel); }
 		}
 
 		public bool IsEditing
@@ -591,7 +735,7 @@ namespace Eto.GtkSharp.Forms.Controls
 			{
 				Gtk.TreePath path;
 				Gtk.TreeViewColumn focus_column;
-				Tree.GetCursor(out path, out focus_column);
+				Control.GetCursor(out path, out focus_column);
 
 #if GTK2
 				var cells = focus_column?.CellRenderers;
@@ -607,47 +751,172 @@ namespace Eto.GtkSharp.Forms.Controls
 		public bool AllowEmptySelection
 		{
 			get => Widget.Properties.Get<bool>(GridHandler.AllowEmptySelection_Key, true);
-			set => Widget.Properties.TrySet(GridHandler.AllowEmptySelection_Key, value, true);
+			set
+			{
+				Widget.Properties.TrySet(GridHandler.AllowEmptySelection_Key, value, true);
+				SetSelectionMode(value, AllowMultipleSelection);
+			}
 		}
 
-		private void Widget_MouseDown(object sender, MouseEventArgs e)
+		private void SetSelectionMode(bool allowEmptySelection, bool allowMultipleSelection)
 		{
-			if (!e.Handled && e.Buttons == MouseButtons.Primary)
-			{
-				var location = e.Location;
-				if (AllowEmptySelection)
+			var currentMode = Control.Selection.Mode;
+			var newMode =
+				(allowEmptySelection, allowMultipleSelection) switch
 				{
-					// clicked on an empty area
-					if (!Tree.GetPathAtPos((int)location.X, (int)location.Y, out _, out _))
+					(true, true) => Gtk.SelectionMode.Multiple,
+					(true, false) => Gtk.SelectionMode.Single,
+					(false, true) => Gtk.SelectionMode.Multiple, // Handled by Selection Changed event in Initialize().
+					(false, false) => Gtk.SelectionMode.Browse
+				};
+
+			if (newMode != currentMode)
+			{
+				// Workaround to not lose the ability to select after switching to Multi, unselecting everything,
+				// then switching back to Single or Browse. Cause unknown but reproduced in GtkSharp.
+				if (currentMode == Gtk.SelectionMode.Multiple
+				    && newMode is Gtk.SelectionMode.Single or Gtk.SelectionMode.Browse)
+				{
+					Control.GetCursor(out var cursorRowPath, out _);
+					var mustReselectCursor = cursorRowPath != null && Control.Selection.PathIsSelected(cursorRowPath);
+
+					Control.Selection.Mode = Gtk.SelectionMode.None;
+					Control.Selection.Mode = newMode;
+
+					if (mustReselectCursor)
 					{
-						UnselectAll();
-						e.Handled = true;
+						Control.Selection.SelectPath(cursorRowPath);
 					}
 				}
 				else
 				{
-					// cancel ctrl+clicking to remove last selected item
-					if (Tree.GetPathAtPos((int)location.X, (int)location.Y, out var path, out _))
-					{
-						if (Tree.Model.GetIter(out var iter, path))
-						{
-							var isSelected = Tree.Selection.IterIsSelected(iter);
-							if (e.Modifiers == Keys.Control && isSelected && Tree.Selection.CountSelectedRows() == 1)
-							{
-								e.Handled = true;
-							}
-						}
-					}
+					Control.Selection.Mode = newMode;
 				}
 			}
 		}
 
 		protected void EnsureSelection()
 		{
-			if (!AllowEmptySelection && Tree.Selection.CountSelectedRows() == 0)
+			if (!AllowEmptySelection && Control.Selection.CountSelectedRows() == 0)
 			{
 				SelectRow(0);
 			}
+		}
+
+		public int GetColumnDisplayIndex(GridColumnHandler column)
+		{
+			var columns = Control.Columns;
+			return Array.IndexOf(columns, column.Control);
+		}
+
+		public void SetColumnDisplayIndex(GridColumnHandler column, int index)
+		{
+			var columns = Control.Columns;
+			var currentIndex = Array.IndexOf(columns, column.Control);
+			if (index != currentIndex)
+				Control.MoveColumnAfter(column.Control, columns[index]);
+		}
+
+		public void ColumnWidthChanged(GridColumnHandler h)
+		{
+			Callback.OnColumnWidthChanged(Widget, new GridColumnEventArgs(h.Widget));
+		}
+
+		public abstract int GetRowOfItem(object item);
+
+		// Number of rows currently displayed (all rows for a flat grid, expanded rows for a tree).
+		protected abstract int NumberOfRows { get; }
+
+		// Height of a single row, including the RowHeight floor that the cell renderers apply plus
+		// the inter-row spacing GtkTreeView adds between rows.
+		int GetContentRowHeight()
+		{
+			// Ask each cell renderer how tall it wants to be. While the tree is mapped this is exact,
+			// but while it is unmapped the renderers report 0 (they only measure once they've been
+			// rendered on a real window), so fall back to the font line height below.
+			int cellHeight = 0;
+			foreach (Gtk.TreeViewColumn column in Control.Columns)
+			{
+				if (!column.Visible)
+					continue;
+				column.CellGetSize(Gdk.Rectangle.Zero, out _, out _, out _, out var height);
+				cellHeight = Math.Max(cellHeight, height);
+			}
+			if (cellHeight == 0)
+				cellHeight = GetFontRowHeight();
+
+			int rowHeight = Math.Max(RowHeight, cellHeight);
+			if (rowHeight > 0)
+				rowHeight += RowSeparatorHeight;
+			return rowHeight;
+		}
+
+		// The height a text cell renderer needs for a single line, derived from the tree's font.
+		// Unlike the cell renderers, a Pango layout reports a stable line height regardless of whether
+		// the tree is mapped, so this lets us estimate the row height before the tree is ever shown.
+		int GetFontRowHeight()
+		{
+			// include ascender/descender glyphs so we get the full line height
+			using (var layout = Control.CreatePangoLayout("Xygj"))
+			{
+				layout.GetPixelSize(out _, out var lineHeight);
+				return lineHeight + CellVerticalPadding;
+			}
+		}
+
+		// GtkCellRendererText's default vertical padding (ypad = 2, top and bottom).
+		const int CellVerticalPadding = 4;
+
+		// GtkTreeView's default "vertical-separator" style property, the spacing added between rows.
+		// The exact allocated height wins via Math.Max once the tree is mapped; this only refines
+		// the estimate used while unmapped.
+		const int RowSeparatorHeight = 2;
+
+		// Vertical space taken by the ScrolledWindow's frame (the ShadowType.In border drawn around
+		// the tree). The style context reports this regardless of mapped state.
+		int GetFrameHeight()
+		{
+			if (ScrolledWindow.ShadowType == Gtk.ShadowType.None)
+				return 0;
+			var border = ScrolledWindow.StyleContext.GetBorder(Gtk.StateFlags.Normal);
+			var height = border.Top + border.Bottom;
+			return height > 0 ? height : DefaultFrameHeight;
+		}
+
+		// Fallback border thickness (1px top + 1px bottom) when the theme doesn't report a frame border.
+		const int DefaultFrameHeight = 2;
+
+		// The natural height needed to display every row plus the header and frame. GtkTreeView derives
+		// its height from lazily-validated rows, which only happens while it is mapped -- so a native
+		// measurement taken while unmapped (or after the data store changed while unmapped) reports a
+		// stale minimal height. This computes the height explicitly from the row count and per-row
+		// height so it is correct regardless of realized/mapped state, and feeds the ScrolledWindow's
+		// native height request (see EtoScrolledWindow) so containers measure it correctly too.
+		internal int CalculateContentHeight()
+		{
+			var rowCount = NumberOfRows;
+			var rowHeight = GetContentRowHeight();
+			if (rowCount <= 0 || rowHeight <= 0)
+				return 0;
+			var height = rowCount * rowHeight;
+			if (ShowHeader)
+				height += GetHeaderHeight();
+			height += GetFrameHeight();
+			return height;
+		}
+
+		int GetHeaderHeight()
+		{
+			int max = 0;
+			foreach (Gtk.TreeViewColumn column in Control.Columns)
+			{
+				if (column.Button != null)
+				{
+					column.Button.GetPreferredHeight(out _, out var nat);
+					max = Math.Max(max, nat);
+				}
+			}
+			return max;
 		}
 	}
 }

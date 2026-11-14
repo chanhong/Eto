@@ -1,10 +1,3 @@
-using System;
-using System.Linq;
-using sd = System.Drawing;
-using swf = System.Windows.Forms;
-using Eto.Drawing;
-using Eto.Forms;
-
 namespace Eto.WinForms.Forms.Controls
 {
 	public class ButtonHandler : ButtonHandler<ButtonHandler.EtoButton, Button, Button.ICallback>, Button.IHandler
@@ -115,6 +108,15 @@ namespace Eto.WinForms.Forms.Controls
 			}
 		}
 
+		static readonly object ImageNextToText_Key = new object();
+
+		public bool ImageNextToText
+		{
+			// WinForms always splits the button into an image region at the edge and centers the text in what's left
+			get { return Widget.Properties.Get<bool>(ImageNextToText_Key); }
+			set { Widget.Properties.Set(ImageNextToText_Key, value); }
+		}
+
 		static readonly object MinimumSize_Key = new object();
 
 		public Size MinimumSize
@@ -135,6 +137,18 @@ namespace Eto.WinForms.Forms.Controls
 		public override bool ShouldBubbleEvent(swf.Message msg)
 		{
 			return !intrinsicEvents.Contains((Win32.WM)msg.Msg) && base.ShouldBubbleEvent(msg);
+		}
+
+		public bool UseMnemonic
+		{
+			get => Control.UseMnemonic;
+			set => Control.UseMnemonic = value;
+		}
+
+		public bool AlwaysShowMnemonic
+		{
+			get => false;
+			set { /* not supported */ }
 		}
 	}
 }

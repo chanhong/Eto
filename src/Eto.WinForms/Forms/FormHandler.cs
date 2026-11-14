@@ -1,9 +1,3 @@
-using System;
-using sd = System.Drawing;
-using swf = System.Windows.Forms;
-using Eto.Drawing;
-using Eto.Forms;
-
 namespace Eto.WinForms.Forms
 {
 	public delegate void WndProcDelegate(ref swf.Message m);
@@ -138,6 +132,12 @@ namespace Eto.WinForms.Forms
 			Resizable = true;
 		}
 
+		internal override void InternalClosing()
+		{
+			base.InternalClosing();
+			SetOwner(null);
+		}
+
 		public void Show()
 		{
 			Control.Show();
@@ -175,6 +175,14 @@ namespace Eto.WinForms.Forms
 				if (etoForm != null)
 					etoForm.ShouldAllowFocus = value;
 			}
+		}
+
+		public override void Focus()
+		{
+			if (!CanFocus)
+				BringToFront();
+			else
+				base.Focus();
 		}
 
 		EtoForm EtoFormControl => Control as EtoForm;

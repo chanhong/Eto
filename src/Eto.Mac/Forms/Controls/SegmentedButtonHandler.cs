@@ -1,39 +1,3 @@
-using System;
-using Eto.Forms;
-using System.Collections.Generic;
-using Eto.Drawing;
-using System.Linq;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 namespace Eto.Mac.Forms.Controls
 {
 	interface ISegmentedItemHandler
@@ -153,6 +117,7 @@ namespace Eto.Mac.Forms.Controls
 			switch (id)
 			{
 				case SegmentedItem.ClickEvent:
+				case SegmentedItem.SelectedChangedEvent:
 					// handled intrinsically
 					break;
 				default:
@@ -219,20 +184,18 @@ namespace Eto.Mac.Forms.Controls
 
 			public override void DrawWithFrame(CGRect cellFrame, NSView inView)
 			{
+				// AppKit centers the segments in a taller frame but draws the menu indicators at its top
+				var height = CellSize.Height;
+				if (height > 0 && cellFrame.Height > height)
+					cellFrame = new CGRect(cellFrame.X, cellFrame.Y + (nfloat)Math.Round((cellFrame.Height - height) / 2), cellFrame.Width, height);
+
 				colorize?.Begin(cellFrame, inView);
 				base.DrawWithFrame(cellFrame, inView);
-				colorize?.End();
 			}
 
 			public override void DrawInteriorWithFrame(CGRect cellFrame, NSView inView)
 			{
-				if (colorize != null)
-				{
-					var context = NSGraphicsContext.CurrentContext.GraphicsPort;
-					var frame = inView.Frame;
-					context.TranslateCTM(0, frame.Height + cellFrame.Y - (frame.Height - cellFrame.Y - cellFrame.Height) + 1);
-					context.ScaleCTM(1, -1);
-				}
+				colorize?.End();
 				base.DrawInteriorWithFrame(cellFrame, inView);
 			}
 		}
@@ -406,16 +369,13 @@ namespace Eto.Mac.Forms.Controls
 
 		public void InsertItem(int index, SegmentedItem item)
 		{
-			var count = ++Control.SegmentCount;
+			var count = Control.SegmentCount++;
 
 			// need to copy items as we can't insert items
-			if (index < count - 1)
+			for (nint i = index; i < count; i++)
 			{
-				for (nint i = index; i < count; i++)
-				{
-					var next = i - 1;
-					CopyItem(i, next);
-				}
+				var next = i + 1;
+				CopyItem(i, next);
 			}
 			SetItem(index, item);
 			if (item.Selected)
@@ -426,9 +386,9 @@ namespace Eto.Mac.Forms.Controls
 		static readonly IntPtr selSetShowsMenuIndicator = Selector.GetHandle("setShowsMenuIndicator:forSegment:");
 
 		// 10.13+
-		static readonly bool supportsTooltip = ObjCExtensions.InstancesRespondToSelector<NSSegmentedCell>(selSetToolTipForSegment);
-		static readonly bool supportsMenuIndicator = ObjCExtensions.InstancesRespondToSelector<NSSegmentedControl>(selSetShowsMenuIndicator);
-
+		internal static readonly bool supportsTooltip = ObjCExtensions.InstancesRespondToSelector<NSSegmentedCell>(selSetToolTipForSegment);
+		internal static readonly bool supportsMenuIndicator = ObjCExtensions.InstancesRespondToSelector<NSSegmentedControl>(selSetShowsMenuIndicator);
+		
 		public void SetItem(int index, SegmentedItem item)
 		{
 			Control.SetLabel(item.Text ?? string.Empty, index);
@@ -562,7 +522,7 @@ namespace Eto.Mac.Forms.Controls
 			if (Control.Cell is EtoSegmentedCell cell)
 			{
 				cell.BackgroundColor = color;
-				Control.SetNeedsDisplay();
+				Control.NeedsDisplay = true;
 			}
 		}
 	}

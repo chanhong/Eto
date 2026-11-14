@@ -1,14 +1,28 @@
 #if GTK3
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-using System.Linq;
-using System.Collections.Generic;
-
 namespace Eto.GtkSharp.Forms
 {
 	public class TableLayoutHandler : GtkContainer<Gtk.Grid, TableLayout, TableLayout.ICallback>, TableLayout.IHandler
 	{
+		public class EtoGrid : Gtk.Grid
+		{
+			protected override void OnGetPreferredHeightForWidth(int width, out int minimum_height, out int natural_height)
+			{
+				if (width == -1)
+				{
+					GetPreferredWidth(out _, out width);
+				}
+				base.OnGetPreferredHeightForWidth(width, out minimum_height, out natural_height);
+			}
+			protected override void OnGetPreferredHeightAndBaselineForWidth(int width, out int minimum_height, out int natural_height, out int minimum_baseline, out int natural_baseline)
+			{
+				if (width == -1)
+				{
+					GetPreferredWidth(out _, out  width);
+				}
+				base.OnGetPreferredHeightAndBaselineForWidth(width, out minimum_height, out natural_height, out minimum_baseline, out natural_baseline);
+			}
+		}
+
 		Gtk.Alignment align;
 		Gtk.EventBox box;
 		bool[] columnScale;
@@ -66,7 +80,7 @@ namespace Eto.GtkSharp.Forms
 			align.Hexpand = false;
 			align.Vexpand = false;
 			box = new EtoEventBox { Child = align, Handler = this };
-			Control = new Gtk.Grid();
+			Control = new EtoGrid();
 			align.Add(Control);
 		}
 
@@ -146,7 +160,7 @@ namespace Eto.GtkSharp.Forms
 				controls[y, x] = null;
 				var blankWidget = blank[y, x];
 				if (blankWidget == null)
-					blankWidget = blank[y, x] = new Gtk.VBox();
+					blankWidget = blank[y, x] = new Gtk.Box(Gtk.Orientation.Vertical, 0);
 				else if (blankWidget.Parent != null)
 					Control.Remove(blankWidget);
 				SetExpand(blankWidget, x, y);
@@ -158,6 +172,9 @@ namespace Eto.GtkSharp.Forms
 
 		public void Remove(Control child)
 		{
+			if (controls == null)
+				return;
+				
 			for (int y = 0; y < controls.GetLength(0); y++)
 			{
 				for (int x = 0; x < controls.GetLength(1); x++)
@@ -168,7 +185,7 @@ namespace Eto.GtkSharp.Forms
 						var widget = child.GetContainerWidget();
 						Control.Remove(widget);
 
-						var blankWidget = blank[y, x] = new Gtk.VBox();
+						var blankWidget = blank[y, x] = new Gtk.Box(Gtk.Orientation.Vertical, 0);
 						SetExpand(blankWidget, x, y);
 						Control.Attach(blankWidget, x, y, 1, 1);
 
@@ -186,7 +203,7 @@ namespace Eto.GtkSharp.Forms
 				var blankWidget = blank[y, x];
 				if (blankWidget == null)
 				{
-					blankWidget = blank[y, x] = new Gtk.VBox();
+					blankWidget = blank[y, x] = new Gtk.Box(Gtk.Orientation.Vertical, 0);
 					Control.Attach(blankWidget, x, y, 1, 1);
 				}
 				else if (blankWidget.Parent != null)
@@ -226,7 +243,7 @@ namespace Eto.GtkSharp.Forms
 			switch (id)
 			{
 				case Eto.Forms.Control.ShownEvent:
-					Control.Mapped += Connector.MappedEvent;
+					// raised by FireOnShown, not a native signal
 					break;
 				default:
 					base.AttachEvent(id);

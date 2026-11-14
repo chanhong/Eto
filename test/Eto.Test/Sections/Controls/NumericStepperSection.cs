@@ -1,11 +1,4 @@
-﻿﻿using Eto.Drawing;
-using Eto.Forms;
-using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Reflection;
-using System.Linq;
-
+﻿using Eto.Drawing;
 namespace Eto.Test.Sections.Controls
 {
 	[Section("Controls", typeof(NumericStepper))]
@@ -29,7 +22,7 @@ namespace Eto.Test.Sections.Controls
 			var chkMinValue = new CheckBox { Text = "MinValue" };
 			chkMinValue.CheckedBinding.Convert(r => r == true ? DualBindingMode.OneWayToSource : DualBindingMode.Manual).Bind(minBinding, m => m.Mode);
 			chkMinValue.CheckedBinding.Bind(minValue, m => m.Enabled);
-			chkMinValue.CheckedBinding.Convert(r => r == false ? double.NegativeInfinity : minValue.Value).Bind(numeric, m => m.MinValue);
+			chkMinValue.CheckedBinding.Convert(r => r == false ? double.MinValue : minValue.Value).Bind(numeric, m => m.MinValue);
 
 			var maxValue = new NumericStepper { Enabled = false, Value = 1000 };
 			var maxBinding = maxValue.ValueBinding.Bind(numeric, (n) => n.MaxValue, DualBindingMode.Manual);
@@ -37,7 +30,7 @@ namespace Eto.Test.Sections.Controls
 			var chkMaxValue = new CheckBox { Text = "MaxValue" };
 			chkMaxValue.CheckedBinding.Convert(r => r == true ? DualBindingMode.OneWayToSource : DualBindingMode.Manual).Bind(maxBinding, m => m.Mode);
 			chkMaxValue.CheckedBinding.Bind(maxValue, m => m.Enabled);
-			chkMaxValue.CheckedBinding.Convert(r => r == false ? double.PositiveInfinity : maxValue.Value).Bind(numeric, m => m.MaxValue);
+			chkMaxValue.CheckedBinding.Convert(r => r == false ? double.MaxValue : maxValue.Value).Bind(numeric, m => m.MaxValue);
 
 			var decimalPlaces = new NumericStepper { MaxValue = 15, MinValue = 0 };
 			var decimalBinding = decimalPlaces.ValueBinding.Convert(r => (int)r, r => r).Bind(numeric, n => n.DecimalPlaces);
@@ -59,9 +52,21 @@ namespace Eto.Test.Sections.Controls
 
 			var cultureDropDown = new CultureDropDown();
 			cultureDropDown.SelectedValueBinding.Bind(numeric, c => c.CultureInfo);
+			
+			var wrap = new CheckBox { Text = "Wrap" };
+			wrap.CheckedBinding.Bind(numeric, n => n.Wrap);
+
+			var textAlignment = new EnumDropDown<TextAlignment>();
+			textAlignment.SelectedValueBinding.Bind(numeric, n => n.TextAlignment);
 
 			var increment = new NumericStepper { MaximumDecimalPlaces = 15 };
 			increment.ValueBinding.Bind(numeric, n => n.Increment);
+
+			var backgroundColorPicker = new ColorPicker { AllowAlpha = true };
+			backgroundColorPicker.ValueBinding.Bind(numeric, n => n.BackgroundColor);
+
+			var textColorPicker = new ColorPicker { AllowAlpha = true };
+			textColorPicker.ValueBinding.Bind(numeric, n => n.TextColor);
 
 			var options1 = new StackLayout
 			{
@@ -70,8 +75,9 @@ namespace Eto.Test.Sections.Controls
 				VerticalContentAlignment = VerticalAlignment.Center,
 				Items =
 				{
+					"TextAlignment", textAlignment,
 					enabled,
-					readOnly
+					readOnly,
 				}
 			};
 			var options2 = new StackLayout
@@ -83,7 +89,8 @@ namespace Eto.Test.Sections.Controls
 				{
 					chkMinValue, minValue,
 					chkMaxValue, maxValue,
-					"Increment", increment
+					"Increment", increment,
+					wrap,
 				}
 			};
 			var options3 = new StackLayout
@@ -97,6 +104,30 @@ namespace Eto.Test.Sections.Controls
 					"MaximumDecimalPlaces", maxDecimalPlaces
 				}
 			};
+			
+			var options4 = new StackLayout
+			{
+				Spacing = 5,
+				Orientation = Orientation.Horizontal,
+				VerticalContentAlignment = VerticalAlignment.Center,
+				Items =
+				{
+					"FormatString", formatString,
+					"CultureInfo", cultureDropDown
+				}
+			};
+
+			var options5 = new StackLayout
+			{
+				Spacing = 5,
+				Orientation = Orientation.Horizontal,
+				VerticalContentAlignment = VerticalAlignment.Center,
+				Items =
+				{
+					"BackgroundColor", backgroundColorPicker,
+					"TextColor", textColorPicker
+				}
+			};
 
 			Content = new StackLayout
 			{
@@ -106,7 +137,8 @@ namespace Eto.Test.Sections.Controls
 					options1,
 					options2,
 					options3,
-					TableLayout.Horizontal(5, "FormatString", formatString, "CultureInfo", cultureDropDown),
+					options4,
+					options5,
 					"Result:", numeric
 				}
 			};

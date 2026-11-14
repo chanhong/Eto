@@ -1,7 +1,4 @@
-using System;
-using Eto.Forms;
 using Eto.WinForms;
-using swf = System.Windows.Forms;
 using Eto.WinForms.Forms.Controls;
 using Eto.WinForms.Forms;
 
@@ -51,7 +48,7 @@ namespace Eto.Forms
 		{
 			if (nativeControl == null)
 				return null;
-			return new Control(new NativeControlHandler(nativeControl));
+			return new NativeControlHost(nativeControl);
 		}
 
 		/// <summary>
@@ -63,7 +60,8 @@ namespace Eto.Forms
 		{
 			if (window == null)
 				return null;
-			return new Form(new NativeFormHandler(window));
+			
+			return NativeFormHandler.Create(window);
 		}
 
 		/// <summary>
@@ -78,7 +76,8 @@ namespace Eto.Forms
 		{
 			if (windowHandle == IntPtr.Zero)
 				return null;
-			return new Form(new HwndFormHandler(windowHandle));
+				
+			return HwndFormHandler.Create(windowHandle);
 		}
 	}
 }

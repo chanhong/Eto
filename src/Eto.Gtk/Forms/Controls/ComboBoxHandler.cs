@@ -1,9 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using Eto.Drawing;
-using Eto.Forms;
 using Eto.GtkSharp.Drawing;
 
 namespace Eto.GtkSharp.Forms.Controls
@@ -99,6 +93,17 @@ namespace Eto.GtkSharp.Forms.Controls
 					entry.SetFont(pangoFont);
 					text.FontDesc = pangoFont;
 				}
+			}
+		}
+
+		public override Eto.Drawing.Size Size
+		{
+			get { return base.Size; }
+			set
+			{
+				// Allow explicit widths below GTK's default entry minimum.
+				entry.WidthChars = (value.Width == -1) ? -1 : 0;
+				base.Size = value;
 			}
 		}
 

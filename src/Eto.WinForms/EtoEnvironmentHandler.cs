@@ -1,9 +1,4 @@
-using System;
 using Eto;
-using System.Reflection;
-using System.IO;
-using System.Diagnostics;
-
 namespace Eto.WinForms
 {
 	public class EtoEnvironmentHandler : WidgetHandler<Widget>, EtoEnvironment.IHandler
@@ -30,6 +25,8 @@ namespace Eto.WinForms
 				case EtoSpecialFolder.ApplicationResources:
 				case EtoSpecialFolder.EntryExecutable:
 					return Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
+				case EtoSpecialFolder.Downloads:
+					return Microsoft.WindowsAPICodePack.Shell.KnownFolders.Downloads.Path;
 				default:
 					return Environment.GetFolderPath(Convert(folder));
 			}

@@ -1,22 +1,5 @@
-using System;
 using Eto.Test.UnitTests;
 using NUnit.Framework;
-using Eto.Forms;
-using System.Threading;
-
-#if XAMMAC2
-using AppKit;
-using CoreGraphics;
-#else
-using MonoMac.AppKit;
-using MonoMac.CoreGraphics;
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 namespace Eto.Test.Mac.UnitTests
 {
 	[TestFixture]
@@ -33,8 +16,8 @@ namespace Eto.Test.Mac.UnitTests
 				nswindow.ContentView = panel.ToNative(true);
 
 				var parentWindow = panel.ParentWindow;
-				Assert.IsNotNull(parentWindow, "#1");
-				Assert.AreSame(nswindow, parentWindow.ControlObject, "#2");
+				Assert.That(parentWindow, Is.Not.Null, "#1");
+				Assert.That(nswindow, Is.SameAs(parentWindow.ControlObject), "#2");
 			});
 		}
 
@@ -46,7 +29,9 @@ namespace Eto.Test.Mac.UnitTests
 			Invoke(() =>
 			{
 				var nswindow = new NSWindow(new CGRect(100, 100, 300, 300), NSWindowStyle.Titled, NSBackingStore.Buffered, false);
+#if Mac64
 				nswindow.ReleasedWhenClosed = false;
+#endif
 
 				var showDialog = new Button { Text = "Show Attached Dialog" };
 				showDialog.Click += (sender, e) =>
@@ -100,7 +85,7 @@ namespace Eto.Test.Mac.UnitTests
 				nswindow.MakeKeyAndOrderFront(nswindow);
 			});
 			ev.WaitOne();
-			Assert.IsTrue(passed);
+			Assert.That(passed, Is.True);
 		}
 	}
 }

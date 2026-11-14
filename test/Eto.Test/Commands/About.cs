@@ -1,6 +1,3 @@
-using System;
-using Eto.Forms;
-
 namespace Eto.Test.Commands
 {
 	public class About : Command
@@ -8,10 +5,11 @@ namespace Eto.Test.Commands
 		public About()
 		{
 			ID = "about";
-			Image = TestIcons.TestIcon;
+			if (Platform.Instance.Supports<Icon>())
+				Image = TestIcons.TestIcon;
 			MenuText = "About Test Application";
 			ToolBarText = "About";
-			Shortcut = Keys.F11;
+			Shortcut = Keys.F1;
 		}
 
 		protected override void OnExecuted(EventArgs e)

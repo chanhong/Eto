@@ -2,9 +2,18 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFrameworks>net5.0;net472</TargetFrameworks>
+    <TargetFrameworks>net10.0;net48</TargetFrameworks>
     <DefineConstants>$(DefineConstants);CAIRO;GTK3</DefineConstants>
     <TreatWarningsAsErrors Condition="$(Configuration) == 'Release'">true</TreatWarningsAsErrors>
+	<RollForward>LatestMajor</RollForward>
+  </PropertyGroup>
+
+  <!-- installer packages are only built (and uploaded by CI) from Linux builds -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform(Linux))">
+    <LinuxPackageFormats>deb;rpm;tar.gz;appimage</LinuxPackageFormats>
+    <LinuxIcon>..\Eto.Test\Images\EtoIcon.ico</LinuxIcon>
+    <LinuxPackageLicense>BSD-3-Clause</LinuxPackageLicense>
+    <LinuxPackageRuntimeIdentifiers>linux-x64;linux-arm64</LinuxPackageRuntimeIdentifiers>
   </PropertyGroup>
 
   <PropertyGroup Condition=" '$(RunConfiguration)' == 'Default' ">
@@ -19,7 +28,5 @@
     <ProjectReference Include="..\..\src\Eto\Eto.csproj" />
     <ProjectReference Include="..\Eto.Test\Eto.Test.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0" PrivateAssets="all" />
-  </ItemGroup>
+  <Import Project="..\..\src\Eto.Gtk\build\Gtk.targets" />
 </Project>

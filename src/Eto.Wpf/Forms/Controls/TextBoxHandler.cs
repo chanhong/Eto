@@ -1,15 +1,8 @@
-using System;
-using swc = System.Windows.Controls;
-using sw = System.Windows;
-using mwc = Xceed.Wpf.Toolkit;
-using swi = System.Windows.Input;
+using System.Runtime;
 using swd = System.Windows.Documents;
-using Eto.Forms;
-using Eto.Drawing;
-
 namespace Eto.Wpf.Forms.Controls
 {
-	public class EtoWatermarkTextBox : mwc.WatermarkTextBox, IEtoWpfControl
+	public class EtoWatermarkTextBox : Eto.Wpf.CustomControls.WatermarkTextBox, IEtoWpfControl
 	{
 		public IWpfFrameworkElement Handler { get; set; }
 
@@ -19,11 +12,19 @@ namespace Eto.Wpf.Forms.Controls
 		}
 	}
 
-	public class TextBoxHandler : TextBoxHandler<mwc.WatermarkTextBox, TextBox, TextBox.ICallback>, TextBox.IHandler
+	public class TextBoxHandler : TextBoxHandler<Eto.Wpf.CustomControls.WatermarkTextBox, TextBox, TextBox.ICallback>, TextBox.IHandler
 	{
 		internal static object CurrentText_Key = new object();
 		internal static object CurrentSelection_Key = new object();
 		internal static object DisableTextChanged_Key = new object();
+		internal static object EnableNoGCRegion_Key = new object();
+
+		/// <summary>
+		/// Gets or sets the default value indicating to use GC.TryStartNoGCRegion() when setting TextBox.Text
+		/// to avoid performance issues with WPF.
+		/// See https://github.com/dotnet/wpf/issues/5887
+		/// </summary>
+		public static bool EnableNoGCRegionDefault = true;
 
 		protected override swc.TextBox TextBox => Control;
 
@@ -42,7 +43,7 @@ namespace Eto.Wpf.Forms.Controls
 	public abstract class TextBoxHandler<TControl, TWidget, TCallback> : WpfControl<TControl, TWidget, TCallback>, TextBox.IHandler
 		where TControl : swc.Control
 		where TWidget : TextBox
-		where TCallback: TextBox.ICallback
+		where TCallback : TextBox.ICallback
 	{
 		bool initialSelection;
 
@@ -66,6 +67,18 @@ namespace Eto.Wpf.Forms.Controls
 			}
 		}
 
+		/// <summary>
+		/// Gets or sets a value indicating to use GC.TryStartNoGCRegion() when setting TextBox.Text
+		/// to avoid performance issues with WPF.
+		/// See https://github.com/dotnet/wpf/issues/5887
+		/// </summary>
+		/// <seealso cref="TextBoxHandler.EnableNoGCRegionDefault" />
+		public bool EnableNoGCRegion
+		{
+			get => Widget.Properties.Get<bool?>(TextBoxHandler.EnableNoGCRegion_Key) ?? TextBoxHandler.EnableNoGCRegionDefault;
+			set => Widget.Properties.Set(TextBoxHandler.EnableNoGCRegion_Key, value);
+		}
+
 		public TextAlignment TextAlignment
 		{
 			get { return TextBox.TextAlignment.ToEto(); }
@@ -76,7 +89,49 @@ namespace Eto.Wpf.Forms.Controls
 			}
 		}
 
-		public TextBoxHandler ()
+		public int GetCharacterIndex(PointF location) => TextBox.GetCharacterIndexFromPoint(location.ToWpf(), true);
+
+		// WPF's text view keeps this much space either side of the text, inside the content host
+		const double DefaultTextViewPadding = 2;
+
+		public PaddingF TextInset
+		{
+			get
+			{
+				var textBox = TextBox;
+				var host = textBox.Template?.FindName("PART_ContentHost", textBox) as sw.FrameworkElement;
+				if (textBox.IsLoaded && host != null && host.IsArrangeValid && Control.IsArrangeValid)
+				{
+					// where the caret sits before the first character, ignoring any scrolling
+					var caret = textBox.GetRectFromCharacterIndex(0);
+					if (!caret.IsEmpty)
+					{
+						var start = textBox.TranslatePoint(new sw.Point(caret.X + textBox.HorizontalOffset, caret.Y + textBox.VerticalOffset), Control);
+						var hostLeft = host.TranslatePoint(new sw.Point(0, 0), Control).X;
+						var hostRight = hostLeft + host.ActualWidth;
+						var inner = start.X - hostLeft;
+						return new PaddingF(
+							(float)start.X,
+							(float)start.Y,
+							(float)(Control.ActualWidth - hostRight + inner),
+							(float)(Control.ActualHeight - start.Y - caret.Height)
+						);
+					}
+				}
+
+				// not laid out yet, so estimate from the border and padding
+				var border = textBox.BorderThickness;
+				var padding = textBox.Padding;
+				return new PaddingF(
+					(float)(border.Left + padding.Left + DefaultTextViewPadding),
+					(float)(border.Top + padding.Top),
+					(float)(border.Right + padding.Right + DefaultTextViewPadding),
+					(float)(border.Bottom + padding.Bottom)
+				);
+			}
+		}
+
+		public TextBoxHandler()
 		{
 		}
 
@@ -104,7 +159,7 @@ namespace Eto.Wpf.Forms.Controls
 				initialSelection = false;
 				return;
 			}
-			if (AutoSelectMode == AutoSelectMode.OnFocus)
+			if (AutoSelectMode == AutoSelectMode.OnFocus || AutoSelectMode == AutoSelectMode.Always)
 				TextBox.SelectAll();
 		}
 
@@ -114,17 +169,21 @@ namespace Eto.Wpf.Forms.Controls
 
 		static Func<char, bool> testIsNonWord = ch => char.IsWhiteSpace(ch) || char.IsPunctuation(ch);
 
-		static Clipboard clipboard;
+		protected override bool SuppressKeyEvents => base.SuppressKeyEvents || DisableTextChanged > 0;
 
-		public override void AttachEvent (string id)
+		public override void AttachEvent(string id)
 		{
-			switch (id) {
+			switch (id)
+			{
+				case Eto.Forms.Control.KeyDownEvent:
+				case Eto.Forms.Control.KeyUpEvent:
+					base.AttachEvent(id);
+					HandleEvent(Eto.Forms.TextBox.TextChangingEvent);
+					break;
 				case TextControl.TextChangedEvent:
 					TextBox.TextChanged += TextBox_TextChanged;
 					break;
 				case Eto.Forms.TextBox.TextChangingEvent:
-					if (clipboard == null)
-						clipboard = new Clipboard();
 					bool didUpdate = false;
 
 					swi.TextCompositionManager.AddPreviewTextInputStartHandler(TextBox, (sender, e) =>
@@ -146,7 +205,7 @@ namespace Eto.Wpf.Forms.Controls
 						DisableTextChanged--;
 						if (!string.IsNullOrEmpty(e.Text) || Selection.Length() > 0)
 						{
-							var tia = new TextChangingEventArgs(e.Text, Selection, Text, true);
+							var tia = new TextChangingEventArgs(e.Text, Selection, Text, didUpdate ? TextChangeSource.Composition : TextChangeSource.Keyboard);
 							Callback.OnTextChanging(Widget, tia);
 							e.Handled = tia.Cancel;
 							if (didUpdate && tia.Cancel && CurrentText != null)
@@ -170,19 +229,22 @@ namespace Eto.Wpf.Forms.Controls
 						if (command == swi.ApplicationCommands.Cut || command == swi.ApplicationCommands.Delete)
 						{
 							var text = TextBox.SelectedText;
-							var tia = new TextChangingEventArgs(string.Empty, Selection, true);
+							// ApplicationCommands.Delete is the app-level command (e.g. from a menu); origin can't be determined.
+							// Keyboard Delete/Backspace routes through EditingCommands below and is reported as Keyboard.
+							var source = command == swi.ApplicationCommands.Cut ? TextChangeSource.Cut : TextChangeSource.Unknown;
+							var tia = new TextChangingEventArgs(string.Empty, Selection, source);
 							Callback.OnTextChanging(Widget, tia);
 							if (tia.Cancel)
 							{
 								if (command == swi.ApplicationCommands.Cut)
-									clipboard.Text = text;
+									Clipboard.Instance.Text = text;
 								e.Handled = true;
 							}
 						}
 						else if (command == swi.ApplicationCommands.Paste)
 						{
-							var text = clipboard.Text;
-							var tia = new TextChangingEventArgs(text, Selection, true);
+							var text = Clipboard.Instance.Text;
+							var tia = new TextChangingEventArgs(text, Selection, TextChangeSource.Paste);
 							Callback.OnTextChanging(Widget, tia);
 							e.Handled = tia.Cancel;
 						}
@@ -193,7 +255,7 @@ namespace Eto.Wpf.Forms.Controls
 								range = new Range<int>(command == swd.EditingCommands.Delete ? range.Start : range.Start - 1);
 							if (range.Start >= 0)
 							{
-								var tia = new TextChangingEventArgs(string.Empty, range, true);
+								var tia = new TextChangingEventArgs(string.Empty, range, TextChangeSource.Keyboard);
 								Callback.OnTextChanging(Widget, tia);
 								e.Handled = tia.Cancel;
 							}
@@ -212,7 +274,7 @@ namespace Eto.Wpf.Forms.Controls
 
 							if (end > start)
 							{
-								var tia = new TextChangingEventArgs(string.Empty, new Range<int>(start, end - 1), true);
+								var tia = new TextChangingEventArgs(string.Empty, new Range<int>(start, end - 1), TextChangeSource.Keyboard);
 								Callback.OnTextChanging(Widget, tia);
 								e.Handled = tia.Cancel;
 							}
@@ -232,7 +294,7 @@ namespace Eto.Wpf.Forms.Controls
 
 							if (end > start)
 							{
-								var tia = new TextChangingEventArgs(string.Empty, new Range<int>(start, end - 1), true);
+								var tia = new TextChangingEventArgs(string.Empty, new Range<int>(start, end - 1), TextChangeSource.Keyboard);
 								Callback.OnTextChanging(Widget, tia);
 								e.Handled = tia.Cancel;
 							}
@@ -241,14 +303,14 @@ namespace Eto.Wpf.Forms.Controls
 						{
 							// space doesn't trigger TextInput (which you'd expect) as it can be interpreted through IME
 							var text = " ";
-							var tia = new TextChangingEventArgs(text, Selection, true);
+							var tia = new TextChangingEventArgs(text, Selection, TextChangeSource.Keyboard);
 							Callback.OnTextChanging(Widget, tia);
 							e.Handled = tia.Cancel;
 						}
 					}));
 					break;
 				default:
-					base.AttachEvent (id);
+					base.AttachEvent(id);
 					break;
 			}
 		}
@@ -285,24 +347,51 @@ namespace Eto.Wpf.Forms.Controls
 				var oldText = Text;
 				CurrentText = null;
 				var newText = value ?? string.Empty;
-				if (newText != oldText)
+				if (newText == oldText)
+					return;
+
+				var args = new TextChangingEventArgs(oldText, newText, TextChangeSource.Programmatic);
+				Callback.OnTextChanging(Widget, args);
+				if (args.Cancel)
+					return;
+
+				// Improve performance when setting text often
+				// See https://github.com/dotnet/wpf/issues/5887#issuecomment-1604577981
+				var endNoGCRegion = EnableNoGCRegion
+					&& GCSettings.LatencyMode != GCLatencyMode.NoGCRegion;
+
+				try
 				{
-					var args = new TextChangingEventArgs(oldText, newText, false);
-					Callback.OnTextChanging(Widget, args);
-					if (args.Cancel)
-						return;
-					var needsTextChanged = TextBox.Text == newText;
-					TextBox.Text = newText;
-					if (needsTextChanged)
-					{
-						Callback.OnTextChanged(Widget, EventArgs.Empty);
-					}
+					if (endNoGCRegion)
+						endNoGCRegion &= GC.TryStartNoGCRegion(1000000); // is this magic number reasonable??
 				}
-				if (value != null && AutoSelectMode == AutoSelectMode.Never && !HasFocus)
+				catch
 				{
+					// Ignore any exceptions, they can apparently still happen even though we check the LatencyMode above
+					endNoGCRegion = false;
+				}
+
+				try
+				{
+					DisableTextChanged++;
+					TextBox.Text = newText;
+					DisableTextChanged--;
+				}
+				finally
+				{
+					if (endNoGCRegion && GCSettings.LatencyMode == GCLatencyMode.NoGCRegion)
+						GC.EndNoGCRegion();
+				}
+
+				if (value != null && AutoSelectMode == AutoSelectMode.Never)
+				{
+					TextBox.BeginChange();
 					TextBox.SelectionStart = value.Length;
 					TextBox.SelectionLength = 0;
+					TextBox.EndChange();
 				}
+
+				Callback.OnTextChanged(Widget, EventArgs.Empty);
 			}
 		}
 
@@ -324,7 +413,11 @@ namespace Eto.Wpf.Forms.Controls
 		{
 			TextBox.SelectAll();
 			if (!HasFocus)
+			{
 				initialSelection = true;
+				if (AlwaysShowSelection)
+					RefreshSelectionHighlight();
+			}
 		}
 
 		int DisableTextChanged
@@ -341,17 +434,87 @@ namespace Eto.Wpf.Forms.Controls
 
 		public Range<int> Selection
 		{
-			get => CurrentSelection ??　new Range<int>(TextBox.SelectionStart, TextBox.SelectionStart + TextBox.SelectionLength - 1);
+			get => CurrentSelection ?? new Range<int>(TextBox.SelectionStart, TextBox.SelectionStart + TextBox.SelectionLength - 1);
 			set
 			{
 				CurrentSelection = null;
+				TextBox.BeginChange();
 				TextBox.SelectionStart = value.Start;
 				TextBox.SelectionLength = value.Length();
+				TextBox.EndChange();
 				if (!HasFocus)
+				{
 					initialSelection = true;
+					if (AlwaysShowSelection)
+						RefreshSelectionHighlight();
+				}
 			}
 		}
 
 		public AutoSelectMode AutoSelectMode { get; set; }
+		public bool AlwaysShowSelection
+		{
+			get => TextBox.IsInactiveSelectionHighlightEnabled;
+			set
+			{
+				TextBox.IsInactiveSelectionHighlightEnabled = value;
+				RefreshSelectionHighlight();
+			}
+		}
+
+		private void RefreshSelectionHighlight()
+		{
+			// Super hack: Refresh the highlight, WPF only does this when has focus or loses focus.
+			// it does not reflect changes to the selection when it is not focused.
+			if (!TextBox.IsLoaded || HasFocus || string.IsNullOrEmpty(Text))
+				return;
+
+			// got this by poking at various methods
+			var textEditor = TextBox.GetType().GetProperty("TextEditor", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(TextBox);
+			if (textEditor == null)
+				return;
+
+			var selection = textEditor.GetType().GetProperty("Selection", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(textEditor);
+			if (selection == null)
+				return;
+
+			// update the caret and selection highlight state
+			var updateMethod = selection.GetType().GetMethod("System.Windows.Documents.ITextSelection.UpdateCaretAndHighlight", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy);
+			updateMethod?.Invoke(selection, null);
+
+
+			// ensure TextView is valid and renders its own selection
+			var textView = selection.GetType().GetProperty("System.Windows.Documents.ITextSelection.TextView", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy)?.GetValue(selection);
+			if (textView == null)
+				return;
+
+			var isValid = textView.GetType().GetProperty("System.Windows.Documents.ITextView.IsValid", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy)?.GetValue(textView);
+			if (!Equals(isValid, true))
+				return;
+
+			var rendersOwnSelection = textView.GetType().GetProperty("System.Windows.Documents.ITextView.RendersOwnSelection", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy)?.GetValue(textView);
+			if (!Equals(rendersOwnSelection, false))
+				return;
+
+			var caretElement = selection.GetType().GetProperty("CaretElement", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(selection);
+			if (caretElement == null)
+				return;
+
+			// update the caret element adorner so that it shows the new selection
+			var updateSelectionMethod = caretElement.GetType().GetMethod("UpdateSelection", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy);
+			updateSelectionMethod?.Invoke(caretElement, null);
+		}
+
+		protected override swc.ContextMenu GetDefaultContextMenu() => TextAreaHandler.CreateDefaultContextMenu();
+
+		public override Color TextColor
+		{
+			get => base.TextColor;
+			set
+			{
+				base.TextColor = value;
+				TextBox.CaretBrush = value.ToWpfBrush(TextBox.CaretBrush);
+			}
+		}
 	}
 }

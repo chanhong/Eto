@@ -1,35 +1,3 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#elif OSX
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 #if IOS
 using NSResponder = UIKit.UIResponder;
 using NSView = UIKit.UIView;
@@ -70,11 +38,6 @@ namespace Eto.Mac.Forms
 			if (!MacView.NewLayout)
 				base.Layout();
 		}
-	}
-
-	static class MacPanel
-	{
-		public static readonly object ContextMenu_Key = new object();
 	}
 
 	public abstract class MacPanel<TControl, TWidget, TCallback> : MacContainer<TControl, TWidget, TCallback>, Panel.IHandler, IMacPanel
@@ -137,34 +100,18 @@ namespace Eto.Mac.Forms
 #endif
 		}
 
-#if OSX
-
-		public ContextMenu ContextMenu
-		{
-			get => Widget.Properties.Get<ContextMenu>(MacPanel.ContextMenu_Key);
-			set
-			{
-				Widget.Properties.Set(MacPanel.ContextMenu_Key, value);
-				EventControl.Menu = (value?.Handler as ContextMenuHandler)?.Control;
-			}
-		}
-#else
-		public virtual ContextMenu ContextMenu
-		{
-			get
-			{
-				throw new NotImplementedException();
-			}
-			set
-			{
-				throw new NotImplementedException();
-			}
-		}
-#endif
 		protected override SizeF GetNaturalSize(SizeF availableSize)
 		{
 			if (content != null && content.Visible)
+			{
+				var preferredSize = UserPreferredSize;
+				if (preferredSize.Width >= 0 && double.IsPositiveInfinity(availableSize.Width))
+					availableSize.Width = preferredSize.Width;
+				if (preferredSize.Height >= 0 && double.IsPositiveInfinity(availableSize.Height))
+					availableSize.Height = preferredSize.Height;
+				
 				return content.GetPreferredSize(SizeF.Max(SizeF.Empty, availableSize - Padding.Size)) + Padding.Size;
+			}
 			
 			return Padding.Size;
 		}

@@ -1,7 +1,3 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-
 namespace Eto.Test.Sections.Controls
 {
 	[Section("Controls", typeof(Drawable))]
@@ -18,7 +14,7 @@ namespace Eto.Test.Sections.Controls
 					TableLayout.HorizontalScaled(
 						10,
 						new TableLayout(
-							"Default",
+							"Default (right click)",
 							Default()
 						),
 						new TableLayout(
@@ -53,6 +49,11 @@ namespace Eto.Test.Sections.Controls
 						)
 					)),
 
+					new TableLayout(
+						"IME Input",
+						InputMethodDrawable()
+					),
+
 					(Platform.SupportedFeatures & PlatformFeatures.DrawableWithTransparentContent) == 0 ?
 					new TableRow(
 						"(Transparent content on drawable not supported on this platform)"
@@ -67,7 +68,10 @@ namespace Eto.Test.Sections.Controls
 		{
 			var control = new Drawable
 			{
-				Size = new Size(50, 50)
+				Size = new Size(50, 50),
+				// this drawable does not handle TextInput, so the system should not add items such as
+				// AutoFill to its menu - compare with the IME Input drawable below, which does.
+				ContextMenu = CreateContextMenu("Default")
 			};
 			control.Paint += delegate(object sender, PaintEventArgs pe)
 			{
@@ -76,6 +80,18 @@ namespace Eto.Test.Sections.Controls
 			LogEvents(control, "Default");
 
 			return control;
+		}
+
+		ContextMenu CreateContextMenu(string name)
+		{
+			var menu = new ContextMenu();
+			for (var i = 1; i <= 2; i++)
+			{
+				var item = new ButtonMenuItem { Text = $"Custom Item {i}" };
+				item.Click += (sender, e) => Log.Write(name, $"Clicked {((ButtonMenuItem)sender).Text}");
+				menu.Items.Add(item);
+			}
+			return menu;
 		}
 
 		Control WithBackground()
@@ -96,9 +112,9 @@ namespace Eto.Test.Sections.Controls
 
 		Control LargeCanvas()
 		{
-			var control = new Drawable
+			var control = new Drawable(true)
 			{
-				Size = new Size(1000, 1000),
+				Size = new Size(2000, 2000),
 				BackgroundColor = Colors.Blue
 			};
 			var image = TestIcons.TestImage;
@@ -281,6 +297,141 @@ namespace Eto.Test.Sections.Controls
 			return control;
 		}
 
+		Control InputMethodDrawable()
+		{
+			const int padding = 12;
+			var text = string.Empty;
+			var compositionText = string.Empty;
+			var compositionActive = false;
+			var contextMenu = CreateContextMenu("IME Input");
+			var drawable = new Drawable
+			{
+				CanFocus = true,
+				Size = new Size(420, 60),
+				BackgroundColor = Colors.White,
+				// this drawable handles TextInput, so the system may add its own items (AutoFill, etc) to the menu
+				ContextMenu = contextMenu
+			};
+			var font = SystemFonts.Default();
+
+			RectangleF getCaretRect(float pointsToPixels = 1f, bool forInputMethod = false)
+			{
+				var displayText = text;
+				if (!forInputMethod || Platform.IsGtk)
+					displayText += compositionText;
+					
+				var size = font.MeasureString(displayText);
+				return new RectangleF(
+					padding + size.Width,
+					padding,
+					2,
+					font.LineHeight * pointsToPixels
+				);
+			}
+
+			void updateCaret()
+			{
+				drawable.Invalidate();
+			}
+
+			drawable.Paint += (sender, pe) =>
+			{
+				var size = font.MeasureString(text);
+				size.Height = font.LineHeight * pe.Graphics.PixelsPerPoint;
+				pe.Graphics.Clear(Colors.White);
+				pe.Graphics.DrawRectangle(Colors.DarkGray, 0, 0, drawable.Width - 1, drawable.Height - 1);
+				pe.Graphics.DrawText(font, Colors.Black, padding, padding, text);
+				if (compositionActive && !string.IsNullOrEmpty(compositionText))
+				{
+					var compositionX = padding + size.Width;
+					pe.Graphics.DrawText(font, Colors.DarkSlateBlue, compositionX, padding, compositionText);
+					var compositionWidth = Math.Max(1, font.MeasureString(compositionText).Width);
+					var underlineY = padding + size.Height;
+					pe.Graphics.DrawLine(Colors.DarkSlateBlue, compositionX, underlineY, compositionX + compositionWidth, underlineY);
+				}
+				if (drawable.HasFocus)
+				{
+					var caret = getCaretRect(pe.Graphics.PixelsPerPoint);
+					pe.Graphics.FillRectangle(Colors.DarkBlue, caret);
+				}
+			};
+			drawable.GotFocus += (sender, e) => drawable.Invalidate();
+			drawable.LostFocus += (sender, e) => drawable.Invalidate();
+			drawable.MouseDown += (sender, e) =>
+			{
+				if (e.Buttons == MouseButtons.Primary)
+					drawable.CommitTextComposition();
+				else
+					drawable.CancelTextComposition();
+				drawable.Focus();
+				// don't handle the alternate button, otherwise the platform never gets to show the ContextMenu
+				e.Handled = e.Buttons != MouseButtons.Alternate;
+			};
+			drawable.TextInput += (sender, e) =>
+			{
+				if (!string.IsNullOrEmpty(e.Text))
+				{
+					text += e.Text;
+					compositionText = string.Empty;
+					compositionActive = false;
+					Log.Write(sender, $"TextInput: '{e.Text}'");
+					updateCaret();
+				}
+				e.Cancel = true;
+			};
+			drawable.TextComposition += (sender, e) =>
+			{
+				compositionText = e.Text ?? string.Empty;
+				compositionActive = e.IsActive && !string.IsNullOrEmpty(compositionText);
+				Log.Write(sender, $"TextComposition: '{compositionText}', Active={e.IsActive}");
+				updateCaret();
+				e.Handled = true;
+			};
+			drawable.TextInsertionBoundsRequested += (sender, e) => e.Bounds = getCaretRect(forInputMethod: true);
+			drawable.KeyDown += (sender, e) =>
+			{
+				if (e.KeyData == Keys.Backspace)
+				{
+					if (text.Length > 0)
+					{
+						text = text.Substring(0, text.Length - 1);
+						updateCaret();
+					}
+					e.Handled = true;
+				}
+				Log.Write(sender, $"KeyDown: {e.KeyData}");
+			};
+
+			updateCaret();
+
+			var includeSystemItems = new EnumCheckBoxList<ContextMenuSystemItems>();
+			// the check boxes aren't created until the control is loaded, so the initial selection can only be
+			// set once they exist - setting it in the constructor silently does nothing.
+			includeSystemItems.LoadComplete += (sender, e) => includeSystemItems.SelectedValues = new[] { ContextMenuSystemItems.All };
+			includeSystemItems.SelectedValuesChanged += (sender, e) =>
+			{
+				var value = ContextMenuSystemItems.None;
+				foreach (var item in includeSystemItems.SelectedValues)
+					value |= item;
+				contextMenu.IncludeSystemItems = value;
+			};
+
+			return new StackLayout
+			{
+				HorizontalContentAlignment = HorizontalAlignment.Stretch,
+				Spacing = 6,
+				Items =
+				{
+					"Click inside the drawable and type with an IME. The candidate/composition UI should follow the caret.",
+					"Right click it to show its ContextMenu. Since this drawable handles TextInput, the system may add"
+						+ " its own items (AutoFill, etc)\nunless IncludeSystemItems is cleared. The 'Default' drawable"
+						+ " above does not handle TextInput, so it should never show them.",
+					new StackLayout { Orientation = Orientation.Horizontal, Spacing = 6, Items = { "IncludeSystemItems:", includeSystemItems } },
+					drawable
+				}
+			};
+		}
+
 		void LogEvents(Drawable control, string name)
 		{
 			control.Paint += delegate(object sender, PaintEventArgs pe)
@@ -290,4 +441,3 @@ namespace Eto.Test.Sections.Controls
 		}
 	}
 }
-

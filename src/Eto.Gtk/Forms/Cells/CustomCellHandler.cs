@@ -1,9 +1,4 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.GtkSharp.Drawing;
-using System.Runtime.InteropServices;
-
 #if GTK2
 using IGtkCellEditable = Gtk.CellEditable;
 using IGtkCellEditableImplementor = Gtk.CellEditableImplementor;
@@ -64,19 +59,22 @@ namespace Eto.GtkSharp.Forms.Cells
 		{
 			WeakReference handler;
 			int editingRow = -1;
+			object editingItem;
 
 			public CustomCellHandler Handler { get { return (CustomCellHandler)handler.Target; } set { handler = new WeakReference(value); } }
 
 			protected override void OnEditingStarted(IGtkCellEditable editable, string path)
 			{
-				//base.OnEditingStarted(editable, path);
+				// base.OnEditingStarted(editable, path);
 				editable.EditingDone += Editable_EditingDone;
 				editingRow = row;
+				editingItem = Item;
 			}
 
 			private void Editable_EditingDone(object sender, EventArgs e)
 			{
 				editingRow = -1;
+				editingItem = null;
 				var editable = sender as IGtkCellEditable;
 				if (editable == null)
 					return;
@@ -87,6 +85,7 @@ namespace Eto.GtkSharp.Forms.Cells
 			{
 				//base.OnEditingCanceled();
 				editingRow = -1;
+				editingItem = null;
 			}
 
 			int row;
@@ -98,14 +97,24 @@ namespace Eto.GtkSharp.Forms.Cells
 				set
 				{
 					row = value;
-					if (Handler.FormattingEnabled)
-						Handler.Format(new GtkGridCellFormatEventArgs<Renderer>(this, Handler.Column.Widget, Handler.Source.GetItem(Row), Row));
+				}
+			}
+
+			object item;
+			[GLib.Property("item")]
+			public object Item
+			{
+				get { return item; }
+				set
+				{
+					item = value;
+					Handler.Format(this, item, Row);
 				}
 			}
 
 			IGtkCellEditable CreateEditable(Gdk.Rectangle cellArea)
 			{
-				var item = Handler.Source.GetItem(Row);
+				var item = Item;
 				int column = -1;
 				var args = new CellEventArgs(null, Handler.Widget, Row, column, item, CellStates.Editing, null);
 
@@ -143,13 +152,13 @@ namespace Eto.GtkSharp.Forms.Cells
 				if (h == null)
 					return;
 
-				if (editingRow == row)
+				if ((row != -1 && editingRow == row) || ReferenceEquals(editingItem, Item))
 				{
 					return;
 				}
 				using (var graphics = new Graphics(new GraphicsHandler(widget, window)))
 				{
-					var item = h.Source.GetItem(Row);
+					var item = Item;
 					var args = new CellPaintEventArgs(graphics, cell_area.ToEto(), flags.ToEto(), item);
 					h.Callback.OnPaint(h.Widget, args);
 				}
@@ -170,7 +179,7 @@ namespace Eto.GtkSharp.Forms.Cells
 				var h = Handler;
 				if (h == null)
 					return;
-				var item = h.Source?.GetItem(Row);
+				var item = Item;
 				int column = -1;
 				var args = new CellEventArgs(null, h.Widget, Row, column, item, CellStates.Editing, null);
 
@@ -209,13 +218,14 @@ namespace Eto.GtkSharp.Forms.Cells
 				}
 #endif
 
-				if (editingRow == row)
+
+				if ((row != -1 && editingRow == row) || ReferenceEquals(editingItem, Item))
 				{
 					return;
 				}
 				using (var graphics = new Graphics(new GraphicsHandler(widget, cr)))
 				{
-					var item = Handler.Source.GetItem(Row);
+					var item = Item;
 					var args = new CellPaintEventArgs(graphics, cell_area.ToEto(), flags.ToEto(), item);
 					Handler.Callback.OnPaint(Handler.Widget, args);
 				}
@@ -233,6 +243,7 @@ namespace Eto.GtkSharp.Forms.Cells
 			}*/
 #endif
 		}
+
 
 		private int OnGetPreferredWidth(CellEventArgs args)
 		{

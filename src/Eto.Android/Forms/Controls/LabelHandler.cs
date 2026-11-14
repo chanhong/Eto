@@ -1,6 +1,3 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
 using a = Android;
 using av = Android.Views;
 using aw = Android.Widget;
@@ -18,7 +15,7 @@ namespace Eto.Android.Forms.Controls
 
 		public LabelHandler()
 		{
-			Control = new aw.TextView(a.App.Application.Context);
+			Control = new aw.TextView(Platform.AppContextThemed);
 		}
 
 		public TextAlignment TextAlignment
@@ -26,7 +23,7 @@ namespace Eto.Android.Forms.Controls
 			get { return Control.Gravity.ToEtoHorizontal(); }
 			set
 			{
-				var gravity = value.ToAndroid();
+				var gravity = value.ToAndroidGravity();
 				Control.Gravity = (Control.Gravity & ~av.GravityFlags.HorizontalGravityMask & AlignmentMask) | gravity;
 			}
 		}
@@ -48,30 +45,17 @@ namespace Eto.Android.Forms.Controls
 			set;
 		}
 
-		Font font;
-		public override Font Font
+		TextTrimming trimming;
+
+		public TextTrimming Trimming
 		{
-			get { return font ?? (font = Control.Typeface.ToEto()); }
+			get { return trimming; }
 			set
 			{
-				if (font != value)
-				{
-					font = value;
-					Control.Typeface = font.ToAndroid();
-				}
+				trimming = value;
+				// A TextView only truncates at a character boundary, so a word ellipsis gets that.
+				Control.Ellipsize = value == TextTrimming.None ? null : a.Text.TextUtils.TruncateAt.End;
 			}
-		}
-
-		public Color TextColor
-		{
-			get { return Color.FromArgb((int)Control.CurrentTextColor); }
-			set { Control.SetTextColor(value.ToAndroid()); }
-		}
-
-		public string Text
-		{
-			get { return Control.Text; }
-			set { Control.Text = value; }
 		}
 	}
 }

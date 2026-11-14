@@ -1,6 +1,3 @@
-using System;
-using Eto.Forms;
-
 namespace Eto.GtkSharp.Forms.Menu
 {
 	/// <summary>
@@ -11,38 +8,59 @@ namespace Eto.GtkSharp.Forms.Menu
 		string text;
 		Keys shortcut;
 		Gtk.AccelLabel label;
-		bool enabled = true;
-		bool isChecked;
 
 		public RadioMenuItemHandler()
 		{
 			label = new Gtk.AccelLabel(string.Empty);
 			label.Xalign = 0;
 			label.UseUnderline = true;
-		}
 
-		public void Create(RadioMenuItem controller)
-		{
-			if (controller != null)
+			Control = new Gtk.RadioMenuItem(string.Empty);
+			foreach (Gtk.Widget w in Control.Children)
 			{
-				Control = new Gtk.RadioMenuItem((Gtk.RadioMenuItem)controller.ControlObject);
+				Control.Remove(w);
 			}
-			else
-			{
-				Control = new Gtk.RadioMenuItem(string.Empty);
-				foreach (Gtk.Widget w in Control.Children)
-				{
-					Control.Remove(w);
-				}
-			}
-
-			Control.Sensitive = enabled;
-			Control.Active = isChecked;
-            Control.Add(label);
-			Control.Activated += Connector.HandleActivated;
+			Control.Active = false;
+			Control.Add(label);
 			Control.ShowAll();
 
 			label.AccelWidget = Control;
+		}
+
+		protected override void Initialize()
+		{
+			base.Initialize();
+			Control.Activated += Connector.HandleActivated;
+		}
+
+		bool settingGroup;
+		RadioMenuItem controller;
+
+		public RadioMenuItem Controller
+		{
+			get => controller;
+			set
+			{
+				controller = value;
+				var controllerControl = (Gtk.RadioMenuItem)value?.ControlObject;
+				if (controllerControl != null && Array.IndexOf(controllerControl.Group, Control) >= 0)
+					return;
+
+				var wasChecked = Control.Active;
+				// joining a group toggles this item, which isn't a change the user should see
+				settingGroup = true;
+				SuppressClick++;
+				try
+				{
+					Control.JoinGroup(controllerControl);
+					Control.Active = wasChecked;
+				}
+				finally
+				{
+					SuppressClick--;
+					settingGroup = false;
+				}
+			}
 		}
 
 		protected new RadioMenuItemConnector Connector { get { return (RadioMenuItemConnector)base.Connector; } }
@@ -59,6 +77,8 @@ namespace Eto.GtkSharp.Forms.Menu
 			public void HandleActivated(object sender, EventArgs e)
 			{
 				var handler = Handler;
+				if (handler == null)
+					return;
 				if (handler.SuppressClick > 0 || !handler.Control.Active)
 					return;
 				handler.Callback.OnClick(handler.Widget, e);
@@ -67,6 +87,8 @@ namespace Eto.GtkSharp.Forms.Menu
 			public void HandleToggled(object sender, EventArgs e)
 			{
 				var handler = Handler;
+				if (handler == null || handler.settingGroup)
+					return;
 				handler.Callback.OnCheckedChanged(handler.Widget, e);
 			}
 		}
@@ -89,8 +111,10 @@ namespace Eto.GtkSharp.Forms.Menu
 			get { return text; }
 			set
 			{
+				if (text == value)
+					return;
 				text = value;
-				label.TextWithMnemonic = value;
+				label.TextWithMnemonic = value.ToPlatformMnemonic();
 			}
 		}
 
@@ -125,28 +149,19 @@ namespace Eto.GtkSharp.Forms.Menu
 
 		public bool Checked
 		{
-			get { return Control != null ? Control.Active : isChecked; }
+			get { return Control.Active; }
 			set
 			{
-				isChecked = value;
-				if (Control != null)
-				{
-					SuppressClick++;
-                    Control.Active = value;
-					SuppressClick--;
-                }
+				SuppressClick++;
+				Control.Active = value;
+				SuppressClick--;
 			}
 		}
 
 		public bool Enabled
 		{
-			get { return Control != null ? enabled : Control.Sensitive; }
-			set {
-				if (Control != null)
-					Control.Sensitive = value;
-				else
-					enabled = value;
-			}
+			get { return Control.Sensitive; }
+			set { Control.Sensitive = value; }
 		}
 
 		public void AddMenu(int index, MenuItem item)

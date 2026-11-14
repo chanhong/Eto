@@ -1,8 +1,6 @@
-using System;
-using System.IO;
-using System.Reflection;
-using System.Linq;
-using System.Collections.Generic;
+using System.CodeDom.Compiler;
+using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Xml;
 
 
@@ -17,6 +15,18 @@ using System.Windows.Markup;
 namespace Eto.Serialization.Xaml
 {
 	/// <summary>
+	/// Settings for reading Eto Xaml files
+	/// </summary>
+	/// <since>2.10</since>
+	public class XamlReaderSettings
+	{
+		/// <summary>
+		/// Gets the namespaces to register with the Xaml reader so they don't need to be specified in every file
+		/// </summary>
+		public Dictionary<string, string> Namespaces { get; } = new();
+	}
+
+	/// <summary>
 	/// Methods to help load/save Eto objects to/from xaml
 	/// </summary>
 	public static class XamlReader
@@ -26,18 +36,141 @@ namespace Eto.Serialization.Xaml
 		/// </summary>
 		public static readonly string EtoFormsNamespace = EtoXamlSchemaContext.EtoFormsNamespace;
 
-		static Stream GetStream(Type type)
+		/// <summary>
+		/// Xaml Namespace for designer-only attributes such as <c>d:DataContext</c>, only applied when <see cref="Control.IsDesignMode"/> is true
+		/// </summary>
+		/// <since>2.13</since>
+		public static readonly string DesignNamespace = EtoXamlSchemaContext.DesignNamespace;
+
+		static readonly Dictionary<Type, string> hotReloadFilePaths = new();
+		static readonly Dictionary<Type, DateTime> hotReloadFileTimes = new();
+
+		// in order of preference
+		static IEnumerable<string> GetTypeFiles(Type type)
 		{
-			return
-				GetStream(type, type.FullName + ".xeto")
-				?? GetStream(type, type.FullName + ".xaml")
-				?? GetStream(type, type.Name + ".xeto") // for F#/VB.NET projects
-				?? throw new InvalidOperationException($"Embedded resource '{type.FullName}.xeto' not found in assembly '{type.GetAssembly()}'");
+			yield return type.FullName + ".xeto";
+			yield return type.FullName + ".xaml";
+			yield return type.Name + ".xeto"; // for F#/VB.NET projects
 		}
 
-		static Stream GetStream(Type type, string resourceName)
+		/// <summary>Opens the first of <paramref name="files"/> found, in order of preference.</summary>
+		internal static Stream GetStream(Type type, IEnumerable<string> files)
 		{
-			return type.GetAssembly().GetManifestResourceStream(resourceName);
+			foreach (var file in files)
+			{
+				var stream = GetStream(type, file);
+				if (stream != null)
+					return stream;
+			}
+			throw new InvalidOperationException($"Embedded resource '{files.First()}' not found in assembly '{type.Assembly}'");
+		}
+
+		internal static Stream GetStream(Type type, string resourceName)
+		{
+			if (hotReloadFilePaths.TryGetValue(type, out var filePath) && File.Exists(filePath))
+				return File.OpenRead(filePath);
+
+			return type.Assembly.GetManifestResourceStream(resourceName);
+		}
+
+		internal static void RegisterHotReloadFile(Type type, string filePath)
+		{
+			hotReloadFilePaths[type] = filePath;
+			// keep the first time so a later Watch doesn't hide an edit
+			if (!hotReloadFileTimes.ContainsKey(type) && File.Exists(filePath))
+				hotReloadFileTimes[type] = File.GetLastWriteTimeUtc(filePath);
+		}
+
+		/// <summary>Whether the watched .xeto was saved since watching started, so compiled code is out of date.</summary>
+		static bool HasHotReloadChanges(Type type)
+		{
+			if (!hotReloadFilePaths.TryGetValue(type, out var filePath))
+				return false;
+			if (!hotReloadFileTimes.TryGetValue(type, out var time) || !File.Exists(filePath))
+				return true;
+			return File.GetLastWriteTimeUtc(filePath) != time;
+		}
+
+		internal static bool FindFileNameFromType(Type type, IEnumerable<string> files, ref string fileName, string sourcePath)
+		{
+			if (sourcePath != null && File.Exists(sourcePath))
+				sourcePath = Path.GetDirectoryName(sourcePath);
+				
+			if (hotReloadFilePaths.TryGetValue(type, out var existing))
+			{
+				fileName = existing;
+				return true;
+			}
+
+			if (fileName != null)
+			{
+				if (File.Exists(fileName))
+					return true;
+				if (sourcePath != null)
+				{
+					var path = Path.Combine(sourcePath, fileName);
+					if (File.Exists(path))
+					{
+						fileName = path;
+						return true;
+					}
+				}
+				return false;
+			}
+			
+			foreach (var file in files)
+			{
+				if (File.Exists(file))
+				{
+					fileName = file;
+					return true;
+				}
+				if (sourcePath != null)
+				{
+					var path = Path.Combine(sourcePath, file);
+					if (File.Exists(path))
+					{
+						fileName = path;
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		/// <summary>
+		/// Watches the .xeto file for changes and triggers the method specified by the <see cref="HotReloadAttribute"/>, if any, when the file changes.
+		/// Otherwise, it will reload the xeto into the control using <see cref="Load{T}"/>.
+		/// </summary>
+		/// <typeparam name="T">Control type</typeparam>
+		/// <param name="control">Instance of the control to watch for changes</param>
+		/// <param name="fileName">Name of the file to watch, or null to use the default based on the class name</param>
+		/// <param name="sourcePath">Source path of the file to watch</param>
+		/// <returns>true if the file is being watched, false otherwise</returns>
+		/// <since>2.10</since>
+		public static bool Watch<T>(T control, string fileName = null, [CallerFilePath] string sourcePath = null)
+		{
+			if (control == null)
+				throw new ArgumentNullException(nameof(control));
+
+			if (!FindFileNameFromType(typeof(T), GetTypeFiles(typeof(T)), ref fileName, sourcePath))
+			{
+				Trace.WriteLine($"File {fileName ?? $"for {typeof(T).FullName}"} could not be found to watch for hot reload.");
+				return false;
+			}
+
+			RegisterHotReloadFile(control.GetType(), fileName);
+
+			// see if the type has a HotReloadAttribute
+			if (HotReloadService.WatchFile(control, fileName, sourcePath))
+				return true;
+
+			// no HotReloadAttribute, so just reload the xaml into the control
+			return HotReloadService.WatchFile(control, fileName, c =>
+			{
+				if (c is T t)
+					Load(t);
+			}, sourcePath);
 		}
 
 		/// <summary>
@@ -54,10 +187,10 @@ namespace Eto.Serialization.Xaml
 		public static T Load<T>()
 			where T : new()
 		{
-			using (var stream = GetStream(typeof(T)))
-			{
-				return Load<T>(stream, default(T));
-			}
+			using var stream = GetStream(typeof(T), GetTypeFiles(typeof(T)));
+			var instance = Load<T>(stream, default);
+			HotReload(instance);
+			return instance;
 		}
 
 		/// <summary>
@@ -88,14 +221,91 @@ namespace Eto.Serialization.Xaml
 		/// <typeparam name="T">Type of object to load from the specified xaml</typeparam>
 		/// <param name="instance">Instance to use as the starting object</param>
 		/// <returns>A new or existing instance of the specified type with the contents loaded from the xaml stream</returns>
-		public static void Load<T>(T instance)
+		public static void Load<T>(T instance) => Load<T>(instance, (XamlReaderSettings)null);
+
+		/// <since>2.10</since>
+		public static void Load<T>(T instance, XamlReaderSettings settings)
 		{
 			if (Equals(instance, null))
 				throw new ArgumentNullException(nameof(instance));
 
-			using (var stream = GetStream(typeof(T)))
+			if (settings == null && TryLoadGenerated(instance))
 			{
-				Load<T>(stream, instance);
+				HotReload(instance);
+				return;
+			}
+
+			using var stream = GetStream(typeof(T), GetTypeFiles(typeof(T)));
+			Load<T>(stream, instance, settings);
+			HotReload(instance);
+		}
+
+		// set by the Eto.Serialization.Xaml.Generator source generator when EtoXamlCodeGen is enabled
+		const string GeneratedMethodName = "InitializeXeto";
+		static readonly Dictionary<Type, MethodInfo> generatedMethods = new();
+
+		static MethodInfo GetGeneratedMethod(Type type)
+		{
+			lock (generatedMethods)
+			{
+				if (generatedMethods.TryGetValue(type, out var method))
+					return method;
+				method = type.GetMethod(GeneratedMethodName, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null);
+				// only use it if it really came from the generator
+				if (method != null && method.GetCustomAttribute<GeneratedCodeAttribute>()?.Tool != "Portable.Xaml.CodeGen")
+					method = null;
+				generatedMethods[type] = method;
+				return method;
+			}
+		}
+
+		internal static bool TryLoadGenerated<T>(T instance)
+		{
+			// the designer and hot reload need the .xeto as it is now, not as it was compiled
+			if (DesignMode || HasHotReloadChanges(typeof(T)) || HasHotReloadChanges(instance.GetType()))
+				return false;
+
+			var method = GetGeneratedMethod(typeof(T));
+			if (method == null)
+				return false;
+
+			Control.BeginDesignLoad();
+			try
+			{
+				method.Invoke(instance, null);
+			}
+			catch (TargetInvocationException ex) when (ex.InnerException != null)
+			{
+				ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+			}
+			finally
+			{
+				Control.EndDesignLoad();
+			}
+			return true;
+		}
+
+		internal static string FindSourceForType(Type type)
+		{
+			var stack = new StackTrace(true);
+			for (int i = 0; i < stack.FrameCount; i++)
+			{
+				var frame = stack.GetFrame(i);
+				var method = frame.GetMethod();
+				if (method.DeclaringType == type)
+					return frame.GetFileName();
+			}
+			return null;
+		}
+
+		private static void HotReload<T>(T instance)
+		{
+			if (HotReloadService.Enabled)
+			{
+				// scan stack trace for type and get source location
+				var sourceFile = FindSourceForType(typeof(T));
+				if (sourceFile != null)
+					Watch<T>(instance, null, sourceFile);
 			}
 		}
 
@@ -120,7 +330,7 @@ namespace Eto.Serialization.Xaml
 			using (var stream = GetStream(typeof(T), resourceName))
 			{
 				if (stream == null)
-					throw new ArgumentException(nameof(resourceName), $"Embedded resource '{resourceName}' not found in assembly '{typeof(T).GetAssembly()}'");
+					throw new ArgumentException(nameof(resourceName), $"Embedded resource '{resourceName}' not found in assembly '{typeof(T).Assembly}'");
 
 				Load<T>(stream, instance);
 			}
@@ -147,12 +357,37 @@ namespace Eto.Serialization.Xaml
 		/// <param name="stream">Xaml content to load (e.g. from resources)</param>
 		/// <param name="instance">Instance to use as the starting object, or null to create a new instance</param>
 		/// <returns>A new or existing instance of the specified type with the contents loaded from the xaml stream</returns>
-		public static T Load<T>(Stream stream, T instance)
+		public static T Load<T>(Stream stream, T instance) => Load(stream, instance, null);
+
+		/// <since>2.10</since>
+		public static T Load<T>(Stream stream, T instance, XamlReaderSettings settings)
+		{
+			var readerSettings = CreateReaderSettings<T>(settings);
+			return Load<T>(new XamlXmlReader(stream, context, readerSettings), instance);
+		}
+
+		private static XamlXmlReaderSettings CreateReaderSettings<T>(XamlReaderSettings settings = null)
 		{
 			var readerSettings = new XamlXmlReaderSettings();
-			if (!DesignMode)
-				readerSettings.LocalAssembly = typeof(T).GetAssembly();
-			return Load<T>(new XamlXmlReader(stream, context, readerSettings), instance);
+
+			readerSettings.AddNamespace(null, EtoFormsNamespace);
+			readerSettings.AddNamespace("x", XamlLanguage.Xaml2006Namespace);
+
+			if (!DesignMode && typeof(T).Assembly != typeof(Control).Assembly)
+			{
+				readerSettings.LocalAssembly = typeof(T).Assembly;
+				readerSettings.AddNamespace("local", $"clr-namespace:{typeof(T).Namespace}");
+			}
+
+			if (settings != null)
+			{
+				foreach (var ns in settings.Namespaces)
+				{
+					readerSettings.AddNamespace(ns.Key, ns.Value);
+				}
+
+			}
+			return readerSettings;
 		}
 
 		/// <summary>
@@ -164,9 +399,7 @@ namespace Eto.Serialization.Xaml
 		/// <returns>A new or existing instance of the specified type with the contents loaded from the xaml stream</returns>
 		public static T Load<T>(TextReader reader, T instance)
 		{
-			var readerSettings = new XamlXmlReaderSettings();
-			if (!DesignMode)
-				readerSettings.LocalAssembly = typeof(T).GetAssembly();
+			var readerSettings = CreateReaderSettings<T>();
 			return Load<T>(new XamlXmlReader(reader, context, readerSettings), instance);
 		}
 
@@ -179,13 +412,11 @@ namespace Eto.Serialization.Xaml
 		/// <returns>A new or existing instance of the specified type with the contents loaded from the xaml stream</returns>
 		public static T Load<T>(XmlReader reader, T instance)
 		{
-			var readerSettings = new XamlXmlReaderSettings();
-			if (!DesignMode)
-				readerSettings.LocalAssembly = typeof(T).GetAssembly();
+			var readerSettings = CreateReaderSettings<T>();
 			return Load<T>(new XamlXmlReader(reader, context, readerSettings), instance);
 		}
 
-		static T Load<T>(XamlXmlReader reader, T instance)
+		internal static T Load<T>(Portable.Xaml.XamlReader reader, T instance)
 		{
 			var writerSettings = new XamlObjectWriterSettings();
 			writerSettings.ExternalNameScope = new EtoNameScope { Instance = instance };
@@ -193,8 +424,84 @@ namespace Eto.Serialization.Xaml
 			writerSettings.RootObjectInstance = instance;
 			var writer = new XamlObjectWriter(context, writerSettings);
 
-			XamlServices.Transform(reader, writer);
+			Control.BeginDesignLoad();
+			try
+			{
+				Transform(reader, writer, Control.IsDesignRootLoad);
+			}
+			finally
+			{
+				Control.EndDesignLoad();
+			}
 			return (T)writer.Result;
 		}
+
+		static void Transform(Portable.Xaml.XamlReader reader, XamlObjectWriter writer, bool applyDesign)
+		{
+			var lineInfo = reader as IXamlLineInfo;
+			var lineConsumer = writer as IXamlLineInfoConsumer;
+			var passLineInfo = lineInfo != null && lineConsumer != null && lineConsumer.ShouldProvideLineInfo;
+			var types = new Stack<XamlType>();
+
+			while (reader.Read())
+			{
+				// the reader has no line info until it has read a node
+				if (passLineInfo && lineInfo.HasLineInfo)
+					lineConsumer.SetLineInfo(lineInfo.LineNumber, lineInfo.LinePosition);
+
+				switch (reader.NodeType)
+				{
+					case XamlNodeType.StartObject:
+						types.Push(reader.Type);
+						break;
+					case XamlNodeType.GetObject:
+						types.Push(null);
+						break;
+					case XamlNodeType.EndObject:
+						types.Pop();
+						break;
+					case XamlNodeType.StartMember when reader.Member.IsDirective && reader.Member.PreferredXamlNamespace == EtoXamlSchemaContext.DesignNamespace:
+						var owner = types.Count > 0 ? types.Peek() : null;
+						var member = applyDesign ? GetDesignMember(owner, reader.Member.Name) : null;
+						if (member != null)
+						{
+							writer.WriteStartMember(member);
+							continue;
+						}
+						SkipMember(reader);
+						continue;
+				}
+				writer.WriteNode(reader);
+			}
+		}
+
+		static XamlMember GetDesignMember(XamlType owner, string name)
+		{
+			if (name == nameof(BindableWidget.DataContext) && owner?.UnderlyingType != null && typeof(BindableWidget).IsAssignableFrom(owner.UnderlyingType))
+				return owner.GetMember(name);
+			return null;
+		}
+
+		static void SkipMember(Portable.Xaml.XamlReader reader)
+		{
+			// skipping keeps markup extensions such as d:DesignInstance from ever being created
+			var depth = 1;
+			while (depth > 0 && reader.Read())
+			{
+				switch (reader.NodeType)
+				{
+					case XamlNodeType.StartMember:
+					case XamlNodeType.StartObject:
+					case XamlNodeType.GetObject:
+						depth++;
+						break;
+					case XamlNodeType.EndMember:
+					case XamlNodeType.EndObject:
+						depth--;
+						break;
+				}
+			}
+		}
+		
 	}
 }

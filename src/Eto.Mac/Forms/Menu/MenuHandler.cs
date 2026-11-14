@@ -1,21 +1,4 @@
-using Eto.Forms;
 using Eto.Mac.Forms.Actions;
-using System;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#endif
-
 namespace Eto.Mac.Forms.Menu
 {
 	public interface IMenuHandler
@@ -28,6 +11,15 @@ namespace Eto.Mac.Forms.Menu
 	public class EtoMenu : NSMenu
 	{
 		public bool WorksWhenModal { get; set; }
+		
+		public EtoMenu()
+		{
+		}
+
+		public EtoMenu(NativeHandle handle)
+			: base(handle)
+		{
+		}
 	}
 
 	static class MenuHandler
@@ -117,15 +109,28 @@ namespace Eto.Mac.Forms.Menu
 				var worksWhenModal = Widget.Properties.Get<bool?>(MenuHandler.WorksWhenModal_Key);
 				if (worksWhenModal == null)
 				{
-					// find top level menu
+					// traverse menu tree to find any parent that specifies it should work when modal
 					var menu = Control.Menu;
-					while (menu.Supermenu != null)
-						menu = menu.Supermenu;
+					do
+					{
+						if (menu is EtoMenu etoMenu && etoMenu.WorksWhenModal)
+							return true;
 
-					worksWhenModal = (menu as EtoMenu)?.WorksWhenModal ?? false;
-					Widget.Properties.Set(MenuHandler.WorksWhenModal_Key, worksWhenModal);
+						menu = menu.Supermenu;
+					} while (menu.Supermenu != null);
+					
+					// check the top menu (e.g. context menu or menu bar)
+					if (menu is EtoMenu topEtoMenu && topEtoMenu.WorksWhenModal)
+						return true;
+					
+					// allow all items if it is in current dialog's menu.
+					if (NSApplication.SharedApplication.KeyWindow is EtoWindow window && window.Handler?.Widget is Dialog dialog)
+					{
+						var currentMenu = MenuBarHandler.GetControl(dialog.Menu);
+						return currentMenu == menu;
+					}
 				}
-				return worksWhenModal.Value;
+				return worksWhenModal ?? false;
 			}
 			set => Widget.Properties.Set(MenuHandler.WorksWhenModal_Key, value);
 		}

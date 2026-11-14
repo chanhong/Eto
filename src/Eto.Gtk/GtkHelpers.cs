@@ -1,5 +1,3 @@
-using System;
-using Eto.Forms;
 using Eto.GtkSharp;
 using Eto.GtkSharp.Forms.Controls;
 using Eto.GtkSharp.Forms;
@@ -48,7 +46,7 @@ namespace Eto.Forms
 		{
 			if (nativeWidget == null)
 				return null;
-			return new Control(new NativeControlHandler(nativeWidget));
+			return new NativeControlHost(nativeWidget);
 		}
 
 		/// <summary>
@@ -60,6 +58,13 @@ namespace Eto.Forms
 		{
 			if (window == null)
 				return null;
+
+			foreach (var w in Application.Instance.Windows)
+			{
+				if (ReferenceEquals(w.ControlObject, window))
+					return w;
+			}
+			
 			return new Form(new FormHandler(window));
 		}
 

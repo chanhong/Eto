@@ -1,8 +1,4 @@
 #if GTK3
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-
 namespace Eto.GtkSharp.Forms.Controls
 {
 	/// <summary>
@@ -16,6 +12,8 @@ namespace Eto.GtkSharp.Forms.Controls
 		where TCallback : Button.ICallback
 	{
 		readonly Gtk.AccelLabel label;
+		string _text;
+		bool _alwaysShowMnemonic;
 
 		Gtk.Image gtkimage;
 
@@ -26,6 +24,7 @@ namespace Eto.GtkSharp.Forms.Controls
 		public ButtonHandler()
 		{
 			label = new Gtk.AccelLabel(string.Empty);
+			label.UseUnderline = true;
 			label.Ellipsize = Pango.EllipsizeMode.End;
 			label.Show();
 		}
@@ -56,10 +55,20 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		public override string Text
 		{
-			get { return label.Text.ToEtoMnemonic(); }
+			get => _text;
 			set
 			{
-				label.TextWithMnemonic = value.ToPlatformMnemonic();
+				_text = value;
+				if (label.UseUnderline)
+				{
+					label.TextWithMnemonic = _text.ToPlatformMnemonic();
+					label.Pattern = _alwaysShowMnemonic ? GtkMnemonicHelper.ToPatternWithMnemonicUnderline(_text) : null;
+				}
+				else
+				{
+					label.Pattern = null;
+					label.Text = _text;
+				}
 				SetImagePosition();
 			}
 		}
@@ -93,29 +102,31 @@ namespace Eto.GtkSharp.Forms.Controls
 			var showLabel = !string.IsNullOrEmpty(label.Text);
 			if (showImage && showLabel)
 			{
-				Gtk.VBox vbox;
-				Gtk.HBox hbox;
+				// when hugging the text, nothing in the box expands so the box gets only its natural size,
+				// which is then centered in the button.
+				var expand = !ImageNextToText;
+				Gtk.Box box;
 				switch (ImagePosition)
 				{
 					case ButtonImagePosition.Above:
-						child = vbox = new Gtk.VBox(false, 2);
-						vbox.PackStart(gtkimage, true, true, 0);
-						vbox.PackEnd(label, false, true, 0);
+						child = box = new Gtk.Box(Gtk.Orientation.Vertical, 2);
+						box.PackStart(gtkimage, expand, true, 0);
+						box.PackEnd(label, false, true, 0);
 						break;
 					case ButtonImagePosition.Below:
-						child = vbox = new Gtk.VBox(false, 2);
-						vbox.PackStart(label, false, true, 0);
-						vbox.PackEnd(gtkimage, true, true, 0);
+						child = box = new Gtk.Box(Gtk.Orientation.Vertical, 2);
+						box.PackStart(label, false, true, 0);
+						box.PackEnd(gtkimage, expand, true, 0);
 						break;
 					case ButtonImagePosition.Left:
-						child = hbox = new Gtk.HBox(false, 2);
-						hbox.PackStart(gtkimage, false, true, 0);
-						hbox.PackStart(label, true, true, 0);
+						child = box = new Gtk.Box(Gtk.Orientation.Horizontal, 2);
+						box.PackStart(gtkimage, false, true, 0);
+						box.PackStart(label, expand, true, 0);
 						break;
 					case ButtonImagePosition.Right:
-						child = hbox = new Gtk.HBox(false, 2);
-						hbox.PackStart(label, true, true, 0);
-						hbox.PackEnd(gtkimage, false, true, 0);
+						child = box = new Gtk.Box(Gtk.Orientation.Horizontal, 2);
+						box.PackStart(label, expand, true, 0);
+						box.PackEnd(gtkimage, false, true, 0);
 						break;
 					case ButtonImagePosition.Overlay:
 #if GTK2
@@ -134,6 +145,11 @@ namespace Eto.GtkSharp.Forms.Controls
 						break;
 					default:
 						throw new NotSupportedException();
+				}
+				if (ImageNextToText)
+				{
+					child.Halign = Gtk.Align.Center;
+					child.Valign = Gtk.Align.Center;
 				}
 			}
 			else if (showLabel)
@@ -164,6 +180,16 @@ namespace Eto.GtkSharp.Forms.Controls
 			}
 		}
 
+		public bool ImageNextToText
+		{
+			get { return Widget.Properties.Get<bool>(ButtonHandler.ImageNextToText_Key); }
+			set
+			{
+				if (Widget.Properties.TrySet(ButtonHandler.ImageNextToText_Key, value))
+					SetImagePosition();
+			}
+		}
+
 		public Color TextColor
 		{
 			get { return label.GetForeground(); }
@@ -180,6 +206,32 @@ namespace Eto.GtkSharp.Forms.Controls
 					Widget.Properties[ButtonHandler.MinimumSize_Key] = value;
 					Control.QueueResize(); 
 				}
+			}
+		}
+
+		public bool UseMnemonic
+		{
+			get => label.UseUnderline;
+			set
+			{
+				if (value == label.UseUnderline)
+					return; // no change
+				var text = Text;
+				label.UseUnderline = value;
+				Text = text;
+			}
+		}
+		
+		public bool AlwaysShowMnemonic
+		{
+			get => _alwaysShowMnemonic;
+			set
+			{
+				if (_alwaysShowMnemonic == value)
+					return;
+				_alwaysShowMnemonic = value;
+				if (_text != null)
+					Text = _text;
 			}
 		}
 

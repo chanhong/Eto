@@ -1,9 +1,3 @@
-using System;
-using Eto.Forms;
-using swc = System.Windows.Controls;
-using swd = System.Windows.Data;
-using sw = System.Windows;
-
 namespace Eto.Wpf.Forms.Cells
 {
 	public class ProgressCellHandler : CellHandler<ProgressCellHandler.DataGridProgressBarColumn, ProgressCell, ProgressCell.ICallback>, ProgressCell.IHandler
@@ -81,7 +75,7 @@ namespace Eto.Wpf.Forms.Cells
 			private swc.Grid GenerateProgressBar(swc.DataGridCell cell, object dataItem)
 			{
 				swc.Grid element = GetControl<swc.Grid>(cell) ?? new swc.Grid();
-				cell.Foreground = sw.SystemColors.ControlTextBrush;
+				// cell.SetResourceReference(swc.Control.ForegroundProperty, sw.SystemColors.ControlTextBrushKey);
 
 				// Add a progress bar to the grid
 				var progressBar = new swc.ProgressBar { Value = 0, Minimum = 0, Maximum = 1 };

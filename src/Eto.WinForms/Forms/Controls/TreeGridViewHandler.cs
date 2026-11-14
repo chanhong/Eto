@@ -1,14 +1,4 @@
-using System;
-using System.Linq;
-using swf = System.Windows.Forms;
-using sd = System.Drawing;
-using Eto.Forms;
-using System.Collections.Generic;
-using Eto.Drawing;
 using Eto.CustomControls;
-using System.Collections.Specialized;
-using System.Runtime.InteropServices;
-
 namespace Eto.WinForms.Forms.Controls
 {
 	public class TreeGridViewHandler : GridHandler<TreeGridView, TreeGridView.ICallback>, TreeGridView.IHandler, ITreeHandler
@@ -27,7 +17,7 @@ namespace Eto.WinForms.Forms.Controls
 
 		public override object GetItemAtRow(int row)
 		{
-			if (row >= controller.Count)
+			if (row >= controller.Count || row < 0)
 				return null;
 			return controller[row];
 		}
@@ -136,7 +126,7 @@ namespace Eto.WinForms.Forms.Controls
 				if (e.Action == NotifyCollectionChangedAction.Add
 					|| e.Action == NotifyCollectionChangedAction.Reset
 					|| e.Action == NotifyCollectionChangedAction.Replace)
-					AutoSizeColumns(e.Action != NotifyCollectionChangedAction.Reset);
+					AutoSizeColumns(true);
 			}
 		}
 
@@ -209,8 +199,8 @@ namespace Eto.WinForms.Forms.Controls
 
 				var node = controller.GetNodeAtRow(rowIndex);
 				var treeRect = cellBounds;
-				treeRect.X += node.Level * INDENT_WIDTH;
-				treeRect.Width = 16;
+				treeRect.X += node.Level * LogicalToDeviceUnits(INDENT_WIDTH);
+				treeRect.Width = LogicalToDeviceUnits(16);
 
 				if (ClassicStyle && ClassicGridLines)
 				{
@@ -290,11 +280,12 @@ namespace Eto.WinForms.Forms.Controls
 					if (swf.Application.RenderWithVisualStyles)
 					{
 						EnsureGlyphRenderers();
+						var size = LogicalToDeviceUnits(16);
 						if (controller.IsExpanded(rowIndex))
-							openRenderer.DrawBackground(graphics, new sd.Rectangle(treeRect.X, treeRect.Y + (treeRect.Height / 2) - 8, 16, 16));
+							openRenderer.DrawBackground(graphics, new sd.Rectangle(treeRect.X, treeRect.Y + (treeRect.Height / 2) - size / 2, size, size));
 						else
 						{
-							closedRenderer.DrawBackground(graphics, new sd.Rectangle(treeRect.X, treeRect.Y + (treeRect.Height / 2) - 8, 16, 16));
+							closedRenderer.DrawBackground(graphics, new sd.Rectangle(treeRect.X, treeRect.Y + (treeRect.Height / 2) - size / 2, size, size));
 						}
 					}
 					else
@@ -323,7 +314,7 @@ namespace Eto.WinForms.Forms.Controls
 		public override int GetRowOffset(GridColumnHandler column, int rowIndex)
 		{
 			if (object.ReferenceEquals(column.Widget, this.Widget.Columns[0]))
-				return INDENT_WIDTH + controller.LevelAtRow(rowIndex) * INDENT_WIDTH;
+				return LogicalToDeviceUnits(INDENT_WIDTH + controller.LevelAtRow(rowIndex) * INDENT_WIDTH);
 			else
 				return 0;
 		}
@@ -332,8 +323,8 @@ namespace Eto.WinForms.Forms.Controls
 		{
 			if (rowIndex >= 0 && object.ReferenceEquals(column.Widget, this.Widget.Columns[0]))
 			{
-				var offset = INDENT_WIDTH + controller.LevelAtRow(rowIndex) * INDENT_WIDTH;
-				if (e.X < offset && e.X >= offset - INDENT_WIDTH)
+				var offset = LogicalToDeviceUnits(INDENT_WIDTH + controller.LevelAtRow(rowIndex) * INDENT_WIDTH);
+				if (e.X < offset && e.X >= offset - LogicalToDeviceUnits(INDENT_WIDTH))
 				{
 					if (controller.IsExpanded(rowIndex))
 						controller.CollapseRow(rowIndex);
@@ -356,16 +347,17 @@ namespace Eto.WinForms.Forms.Controls
 					var mode = displayedOnly ? swf.DataGridViewAutoSizeColumnMode.DisplayedCells : swf.DataGridViewAutoSizeColumnMode.AllCells;
 					var width = colHandler.Control.GetPreferredWidth(mode, false);
 					if (width > colHandler.Control.Width)
-						colHandler.Control.Width = width;
+						colHandler.Control.Width = Math.Min(ushort.MaxValue, width);
 				}
 			}
 		}
 
-		void ITreeHandler.PreResetTree()
+		bool ITreeHandler.PreResetTree(object item, int row)
 		{
+			return false;
 		}
 
-		void ITreeHandler.PostResetTree()
+		void ITreeHandler.PostResetTree(object item, int row)
 		{
 		}
 
@@ -397,13 +389,12 @@ namespace Eto.WinForms.Forms.Controls
 				controller.ReloadItem(item);
 		}
 
-		public ITreeGridItem GetCellAt(PointF location, out int column)
+		public TreeGridCell GetCellAt(PointF location)
 		{
 			var result = Control.HitTest((int)location.X, (int)location.Y);
-			column = result.ColumnIndex;
-			if (result.RowIndex == -1)
-				return null;
-			return GetItemAtRow(result.RowIndex) as ITreeGridItem;
+			var column = result.ColumnIndex != -1 ? Widget.Columns[result.ColumnIndex] : null;
+			var item = GetItemAtRow(result.RowIndex);
+			return new TreeGridCell(column, result.ColumnIndex, result.Type.ToEto(), item);
 		}
 
 		public TreeGridViewDragInfo GetDragInfo(DragEventArgs args) => args.ControlObject as TreeGridViewDragInfo;

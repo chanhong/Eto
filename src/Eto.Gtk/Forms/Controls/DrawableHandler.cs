@@ -1,13 +1,9 @@
-using Eto.Drawing;
-using Eto.Forms;
 using Eto.GtkSharp.Drawing;
-using System;
-
 namespace Eto.GtkSharp.Forms.Controls
 {
 	public class DrawableHandler : GtkPanel<Gtk.EventBox, Drawable, Drawable.ICallback>, Drawable.IHandler
 	{
-		Gtk.VBox content;
+		Gtk.Box content;
 
 		public bool SupportsCreateGraphics { get { return true; } }
 
@@ -21,7 +17,7 @@ namespace Eto.GtkSharp.Forms.Controls
 			Control.CanDefault = true;
 			Control.Events |= Gdk.EventMask.ButtonPressMask;
 
-			content = new Gtk.VBox();
+			content = new Gtk.Box(Gtk.Orientation.Vertical, 0);
 
 			Control.Add(content);
 		}
@@ -40,6 +36,21 @@ namespace Eto.GtkSharp.Forms.Controls
 		public void Create(bool largeCanvas)
 		{
 			Create();
+		}
+
+		public override void AttachEvent(string id)
+		{
+			switch (id)
+			{
+				case Drawable.TextCompositionEvent:
+				case Drawable.TextInsertionBoundsRequestedEvent:
+					HandleEvent(Eto.Forms.Control.TextInputEvent);
+					HandleEvent(Eto.Forms.Control.GotFocusEvent);
+					HandleEvent(Eto.Forms.Control.LostFocusEvent);
+					return;
+			}
+
+			base.AttachEvent(id);
 		}
 
 		public bool CanFocus
@@ -61,8 +72,11 @@ namespace Eto.GtkSharp.Forms.Controls
 
 			public void HandleDrawableButtonPressEvent(object o, Gtk.ButtonPressEventArgs args)
 			{
-				if (Handler.CanFocus)
-					Handler.Control.GrabFocus();
+				var handler = Handler;
+				if (handler == null)
+					return;
+				if (handler.CanFocus)
+					handler.Control.GrabFocus();
 			}
 
 #if GTK2
@@ -82,21 +96,23 @@ namespace Eto.GtkSharp.Forms.Controls
 			[GLib.ConnectBefore]
 			public void HandleDrawn(object o, Gtk.DrawnArgs args)
 			{
-				var h = Handler;
+				var handler = Handler;
+				if (handler == null)
+					return;
 
-				var allocation = h.Control.Allocation.Size;
+				var allocation = handler.Control.Allocation.Size;
 				args.Cr.Rectangle(new Cairo.Rectangle(0, 0, allocation.Width, allocation.Height));
 				args.Cr.Clip();
 				Gdk.Rectangle rect = new Gdk.Rectangle();
 				if (!GraphicsHandler.GetClipRectangle(args.Cr, ref rect))
 					rect = new Gdk.Rectangle(Gdk.Point.Zero, allocation);
 
-				using (var graphics = new Graphics(new GraphicsHandler(args.Cr, h.Control.PangoContext, false)))
+				using (var graphics = new Graphics(new GraphicsHandler(args.Cr, handler.Control.PangoContext, false)))
 				{
-					if (h.SelectedBackgroundColor != null)
-						graphics.Clear(h.SelectedBackgroundColor.Value);
+					if (handler.SelectedBackgroundColor != null)
+						graphics.Clear(handler.SelectedBackgroundColor.Value);
 					
-					h.Callback.OnPaint(h.Widget, new PaintEventArgs(graphics, rect.ToEto()));
+					handler.Callback.OnPaint(handler.Widget, new PaintEventArgs(graphics, rect.ToEto()));
 				}
 			}
 #endif
@@ -113,6 +129,16 @@ namespace Eto.GtkSharp.Forms.Controls
 		public Graphics CreateGraphics()
 		{
 			return new Graphics(new GraphicsHandler(Control, Control.GetWindow()));
+		}
+
+		public void CancelTextComposition()
+		{
+			Connector.CancelDrawableTextComposition();
+		}
+
+		public void CommitTextComposition()
+		{
+			Connector.CommitDrawableTextComposition();
 		}
 
 		protected override void SetContainerContent(Gtk.Widget content)

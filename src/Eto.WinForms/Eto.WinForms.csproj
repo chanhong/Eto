@@ -1,22 +1,14 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project>
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <HaveWindowsDesktopSdk Condition="$(HaveWindowsDesktopSdk) == '' and $(OS) == 'Windows_NT'">true</HaveWindowsDesktopSdk>
-    
-    <TargetFrameworks>netcoreapp3.1;net45;net462</TargetFrameworks>
-  </PropertyGroup>
-
-  <Import Condition="'$(HaveWindowsDesktopSdk)' != 'true'" Sdk="Microsoft.NET.Sdk" Project="Sdk.props" />
-  <Import Condition="'$(HaveWindowsDesktopSdk)' == 'true'" Sdk="Microsoft.NET.Sdk.WindowsDesktop" Project="Sdk.props" />
-
-  <PropertyGroup>
+    <TargetFrameworks Condition="$(TargetFrameworkOverride) == ''">net461;net6.0-windows;net8.0-windows;net10.0-windows</TargetFrameworks>
+    <TargetFrameworks Condition="$(TargetFrameworkOverride) != ''">$(TargetFrameworkOverride)</TargetFrameworks>
     <OutputType>Library</OutputType>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <DefineConstants>$(DefineConstants);WINFORMS</DefineConstants>
-    <!-- Suppress warning NU1701: Package 'Windows7APICodePack-Core 1.1.0' was restored using '.NETFramework,Version=v4.6.1' instead of the project target framework '.NETCoreApp,Version=v3.0'. This package may not be fully compatible with your project. -->
-    <NoWarn>NU1701;MSB4011;$(NoWarn)</NoWarn>
-    <UseWindowsForms Condition="$(HaveWindowsDesktopSdk) == 'True'">true</UseWindowsForms>
+    <NoWarn>MSB4011;WFO1000;$(NoWarn)</NoWarn>
+    <UseWindowsForms>true</UseWindowsForms>
+    <GenerateResourceUsePreserializedResources>True</GenerateResourceUsePreserializedResources>
   </PropertyGroup>
   
   <PropertyGroup>
@@ -42,6 +34,13 @@ You do not need to use any of the classes of this assembly (unless customizing t
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <DebugType>pdbonly</DebugType>
   </PropertyGroup>
+  
+  <ItemGroup>
+    <Using Include="System.Windows.Forms" Alias="swf" />
+    <Using Include="System.Drawing" Alias="sd" />
+    <Using Include="System.Drawing.Imaging" Alias="sdi" />
+    <Using Include="System.Drawing.Drawing2D" Alias="sd2" />
+  </ItemGroup>
 
   <ItemGroup>
     <Reference Include="..\..\lib\SHDocVw\Interop.SHDocVw.dll" EmbedInteropTypes="False" Private="False" />
@@ -94,12 +93,41 @@ You do not need to use any of the classes of this assembly (unless customizing t
     <Compile Include="..\Shared\BaseBitmapData.cs">
       <Link>Drawing\BaseBitmapData.cs</Link>
     </Compile>    
+    <Compile Include="..\Shared\OpenTypeFontInfo.cs">
+      <Link>Drawing\OpenTypeFontInfo.cs</Link>
+    </Compile>    
+    <Compile Include="..\Shared\NetFxCompatibility.cs">
+      <Link>NetFxCompatibility.cs</Link>
+    </Compile>
     <Compile Include="..\Eto.Wpf\Forms\TaskbarHandler.cs">
       <Link>Forms\TaskbarHandler.cs</Link>
     </Compile>
     <Compile Include="..\Eto.Wpf\Forms\Controls\WebView2Handler.cs">
       <Link>Forms\Controls\WebView2Handler.cs</Link>
     </Compile>
+    <Compile Include="..\Eto.Wpf\Forms\DataObjectHandler.cs">
+      <Link>Forms\DataObjectHandler.cs</Link>
+    </Compile>
+    <Compile Include="..\Eto.Wpf\Forms\KeyboardHandler.cs">
+      <Link>Forms\KeyboardHandler.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\WebViewHtmlServer.cs">
+      <Link>Forms\Controls\WebViewHtmlServer.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\HttpClientExtensions.cs">
+      <Link>HttpClientExtensions.cs</Link>
+    </Compile>
+    <Compile Include="..\Eto.Wpf\Drawing\SystemIconsHandler.cs">
+      <Link>Drawing\SystemIconsHandler</Link>
+    </Compile>
+    <Compile Include="..\Eto.Wpf\ShellIcon.cs">
+      <Link>ShellIcon.cs</Link>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\Shared\build\*" Exclude="..\Shared\build\Windows.targets" Pack="True" PackagePath="build" Link="build\%(Filename)%(Extension)" />
+    <None Include="..\Shared\build\Windows.targets" Pack="True" PackagePath="build\$(PackageId).targets" Link="build\Windows.targets" />
   </ItemGroup>
 
   <ItemGroup>
@@ -111,12 +139,24 @@ You do not need to use any of the classes of this assembly (unless customizing t
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Windows7APICodePack-Shell" Version="1.1.0" />
-    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0" PrivateAssets="all" />
-  	<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.705.50" PrivateAssets="all" Condition="$(TargetFramework) != 'net45'" />
+    <PackageReference Include="Microsoft-WindowsAPICodePack-Shell" Version="1.1.4" />
+   	<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.1938.49" PrivateAssets="all" />
+    <PackageReference Include="System.Resources.Extensions" Version="7.0.0" />
   </ItemGroup>
 
-  <Import Condition="'$(HaveWindowsDesktopSdk)' != 'true'" Sdk="Microsoft.NET.Sdk" Project="Sdk.targets" />
-  <Import Condition="'$(HaveWindowsDesktopSdk)' == 'true'" Sdk="Microsoft.NET.Sdk.WindowsDesktop" Project="Sdk.targets" />
+  <ItemGroup>
+    <Compile Update="Resources.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Update="Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+  </ItemGroup>
 
 </Project>

@@ -1,7 +1,3 @@
-using System;
-using System.Threading.Tasks;
-using Eto.Forms;
-
 namespace Eto.GtkSharp.Forms
 {
 	public class DialogHandler : GtkWindow<Gtk.Dialog, Dialog, Dialog.ICallback>, Dialog.IHandler
@@ -16,13 +12,16 @@ namespace Eto.GtkSharp.Forms
 
 			Resizable = false;
 		}
+		
+		protected override Gdk.WindowTypeHint DefaultTypeHint => Gdk.WindowTypeHint.Dialog;
 
 		protected override void Initialize()
 		{
 			base.Initialize();
+			Control.Modal = true;
 			Control.KeyPressEvent += Connector.Control_KeyPressEvent;
 
-			var vbox = new EtoVBox { Handler = this };
+			var vbox = new EtoBox(Gtk.Orientation.Vertical, 0) { Handler = this };
 			vbox.PackStart(WindowActionControl, false, true, 0);
 			vbox.PackStart(WindowContentControl, true, true, 0);
 
@@ -98,14 +97,24 @@ namespace Eto.GtkSharp.Forms
 			DisableAutoSizeUpdate++;
 			ReloadButtons();
 
-			Control.Modal = true;
+			Control.Child?.ShowAll();
+			if (!Control.IsRealized)
+			{
+				Control.Realize();
+			}
+			Control.QueueResize();
+			Callback.OnLoadComplete(Widget, EventArgs.Empty);
+			
 			Control.ShowAll();
 			DisableAutoSizeUpdate--;
 
-			do
+			if (!WasClosed)
 			{
-				Control.Run();
-			} while (!WasClosed && !CloseWindow());
+				do
+				{
+					Control.Run();
+				} while (!WasClosed && !CloseWindow());
+			}
 
 			WasClosed = false;
 			Control.Hide();
@@ -187,20 +196,13 @@ namespace Eto.GtkSharp.Forms
 			}
 		}
 
-		static readonly object WasClosedKey = new object();
-
-		bool WasClosed
-		{
-			get { return Widget.Properties.Get<bool>(WasClosedKey); }
-			set { Widget.Properties.Set(WasClosedKey, value); }
-		}
-
 		public override void Close()
 		{
-			if (CloseWindow())
+			if (Widget.Loaded && CloseWindow())
 			{
-				WasClosed = true;
 				Control.Hide();
+				Control.Unrealize();
+				WasClosed = true;
 			}
 		}
 
@@ -219,6 +221,11 @@ namespace Eto.GtkSharp.Forms
 			var tcs = new TaskCompletionSource<bool>();
 			Application.Instance.AsyncInvoke(() =>
 			{
+				if (Widget.IsDisposed)
+				{
+					tcs.SetResult(false);
+					return;
+				}
 				ShowModal();
 				tcs.SetResult(true);
 			});
@@ -234,7 +241,7 @@ namespace Eto.GtkSharp.Forms
 		{
 			public new DialogHandler Handler => (DialogHandler)base.Handler;
 
-			internal void Control_KeyPressEvent(object o, Gtk.KeyPressEventArgs args) => Handler.Control_KeyPressEvent(o, args);
+			internal void Control_KeyPressEvent(object o, Gtk.KeyPressEventArgs args) => Handler?.Control_KeyPressEvent(o, args);
 		}
 	}
 }

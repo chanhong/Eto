@@ -1,7 +1,5 @@
-﻿using System;
-using System.Diagnostics;
-using System.IO;
-using Eto.Drawing;
+﻿
+using Eto.Test.Sections.Behaviors;
 
 namespace Eto.Test
 {
@@ -17,6 +15,31 @@ namespace Eto.Test
 		public string LastUnitTestFilter { get; set; }
 
 		public Rectangle? LastFormPosition { get; set; }
+		
+		public string LastTheme { get; set; }
+
+		bool _GridViewSection_SaveColumnDisplayIndexes;
+		public bool GridViewSection_SaveColumnDisplayIndexes
+		{
+			get => _GridViewSection_SaveColumnDisplayIndexes;
+			set
+			{
+				_GridViewSection_SaveColumnDisplayIndexes = value;
+				if (!value)
+				{
+					GridViewSection_ColumnWidths = null;
+					GridViewSection_ColumnAutoSize = null;
+					GridViewSection_DisplayIndexes = null;
+					GridViewSection_VisibleIndexes = null;
+				}
+			}
+		}
+		public List<int> GridViewSection_ColumnWidths { get; set; }
+		public List<bool> GridViewSection_ColumnAutoSize { get; set; }
+		public List<int> GridViewSection_DisplayIndexes { get; set; }
+		public List<bool> GridViewSection_VisibleIndexes { get; set; }
+		public WindowsSection.SettingsWindow WindowSettings { get; set; } = new WindowsSection.SettingsWindow();
+
 
 		public static Settings Load()
 		{

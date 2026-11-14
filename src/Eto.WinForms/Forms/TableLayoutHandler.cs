@@ -1,10 +1,3 @@
-using System;
-using sd = System.Drawing;
-using swf = System.Windows.Forms;
-using Eto.Forms;
-using Eto.Drawing;
-using System.Linq;
-
 namespace Eto.WinForms.Forms
 {
 	public class TableLayoutHandler : WindowsContainer<swf.TableLayoutPanel, TableLayout, TableLayout.ICallback>, TableLayout.IHandler
@@ -261,6 +254,9 @@ namespace Eto.WinForms.Forms
 
 		void FillEmptyCells()
 		{
+			if (views == null || views.GetLength(0) == 0 || views.GetLength(1) == 0)
+				return;
+
 			for (int x = 1; x < views.GetLength(0); x++)
 			{
 				if (Control.GetControlFromPosition(x, 0) == null && views[x, 0] == null)
@@ -279,7 +275,8 @@ namespace Eto.WinForms.Forms
 			if (childControl.Parent == Control)
 			{
 				var pos = Control.GetCellPosition(childControl);
-				views[pos.Column, pos.Row] = null;
+				if (views != null && ReferenceEquals(views[pos.Column, pos.Row], child))
+					views[pos.Column, pos.Row] = null;
 				childControl.Parent = null;
 				SetEmptyCell(pos.Column, pos.Row);
 			}

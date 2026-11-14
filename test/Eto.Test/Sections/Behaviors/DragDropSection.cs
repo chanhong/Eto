@@ -1,11 +1,3 @@
-using System;
-using Eto.Forms;
-using System.Text;
-using Eto.Drawing;
-using System.Collections.Generic;
-using System.Linq;
-using System.Collections.ObjectModel;
-
 namespace Eto.Test.Sections.Behaviors
 {
 	[Section("Behaviors", "Drag and Drop")]
@@ -20,6 +12,23 @@ namespace Eto.Test.Sections.Behaviors
 		TextBox innerTextBox;
 		CheckBox writeDataCheckBox;
 		EnumDropDown<DragEffects> allowedEffectDropDown;
+		
+		[DataContract]
+		public class CustomDataContractType
+		{
+			[DataMember]
+			public string Name { get; set; }
+
+			public override string ToString() => Name;
+		}
+		
+		[Serializable]
+		public class CustomSerializableType
+		{
+			public string Name { get; set; }
+
+			public override string ToString() => Name;
+		}
 
 		public DragDropSection()
 		{
@@ -69,6 +78,9 @@ namespace Eto.Test.Sections.Behaviors
 					data.Html = htmlTextArea.Text;
 				if (includeImageCheck.Checked == true)
 					data.Image = TestIcons.Logo;
+					
+				data.SetObject(new CustomDataContractType { Name = "Hello Data Contract!" }, "my.custom.datacontract.type");
+				data.SetObject(new CustomSerializableType { Name = "Hello Serializable!" }, "my.custom.serializable.type");
 
 				return data;
 			}
@@ -76,6 +88,7 @@ namespace Eto.Test.Sections.Behaviors
 			// sources
 
 			var buttonSource = new Button { Text = "Source" };
+			LogSourceEvents(buttonSource);
 			buttonSource.MouseDown += (sender, e) =>
 			{
 				if (e.Buttons != MouseButtons.None)
@@ -86,6 +99,7 @@ namespace Eto.Test.Sections.Behaviors
 			};
 
 			var panelSource = new Panel { BackgroundColor = Colors.Red, Size = new Size(50, 50) };
+			LogSourceEvents(panelSource);
 			panelSource.MouseMove += (sender, e) =>
 			{
 				if (e.Buttons != MouseButtons.None)
@@ -96,6 +110,7 @@ namespace Eto.Test.Sections.Behaviors
 			};
 
 			var treeSource = new TreeGridView { Size = new Size(200, 200) };
+			LogSourceEvents(treeSource);
 			treeSource.SelectedItemsChanged += (sender, e) => Log.Write(treeSource, $"TreeGridView.SelectedItemsChanged (source) Rows: {string.Join(", ", treeSource.SelectedRows.Select(r => r.ToString()))}");
 			treeSource.DataStore = CreateTreeData();
 			SetupTreeColumns(treeSource);
@@ -116,6 +131,7 @@ namespace Eto.Test.Sections.Behaviors
 			};
 
 			var gridSource = new GridView {  };
+			LogSourceEvents(gridSource);
 			gridSource.SelectedRowsChanged += (sender, e) => Log.Write(gridSource, $"GridView.SelectedItemsChanged (source): {string.Join(", ", gridSource.SelectedRows.Select(r => r.ToString()))}");
 			SetupGridColumns(gridSource);
 			gridSource.DataStore = CreateGridData();
@@ -232,6 +248,11 @@ namespace Eto.Test.Sections.Behaviors
 			LogEvents(gridDest);
 
 
+			var textBoxDest = new TextBox { AllowDrop = true, Text = "TextBox" };
+			LogEvents(textBoxDest);
+
+			var comboBoxDest = new ComboBox { AllowDrop = true, Text = "ComboBox" };
+			LogEvents(comboBoxDest);
 
 			// layout
 
@@ -278,7 +299,7 @@ namespace Eto.Test.Sections.Behaviors
 			layout.EndVertical();
 
 			layout.BeginVertical(xscale: true);
-			layout.AddRange("Drag destinations:", buttonDestination, drawableDest);
+			layout.AddRange("Drag destinations:", buttonDestination, drawableDest, textBoxDest, comboBoxDest);
 			layout.Add(treeDest, yscale: true);
 			layout.Add(gridDest, yscale: true);
 			layout.EndVertical();
@@ -376,6 +397,14 @@ namespace Eto.Test.Sections.Behaviors
 				sb.Append($"\n\tUris: {string.Join(", ", uris.Select(r => r.IsFile ? r.LocalPath : r.AbsoluteUri))})");
 			return sb.ToString();
 		}
+		
+		void LogSourceEvents(Control control)
+		{
+			control.DragEnd += (sender, e) =>
+			{
+				Log.Write(sender, $"DragEnd: Effects: {e.Effects}, {WriteDragInfo(sender, e)}");
+			};
+		}
 
 		void LogEvents(Control control)
 		{
@@ -436,15 +465,33 @@ namespace Eto.Test.Sections.Behaviors
 					var d = data.GetData(format);
 					if (d != null)
 					{
-						var s = string.Join(",", d.Select(r => r.ToString()).Take(1000));
-						Log.Write(null, $"\t{format}: {s}");
+						var s = string.Join(",", d.Select(r => r.ToString()).Take(10));
+						Log.Write(null, $"\t{format}: data: {d.Length} bytes ({s})");
 					}
 					else
-						Log.Write(null, $"\t{format}: {d}");
+						Log.Write(null, $"\t{format}: data: <null>");
 				}
-				catch
+				catch (Exception ex)
 				{
-
+					Log.Write(null, $"Error getting data for {format}, {ex.Message}");
+				}
+				
+				try
+				{
+					var obj = data.GetObject(format);
+					if (obj != null)
+					{
+						object val = null;
+						if (obj.ToString() != obj.GetType().ToString())
+							val = obj;
+						Log.Write(null, $"\t{format}: object: {obj.GetType()} {val}");
+						if (obj is string[] strings)
+							Log.Write(null, $"\t\tvalues: {string.Join(";", strings)}");
+					}
+				}
+				catch (Exception ex)
+				{
+					Log.Write(null, $"Error getting object for {format}, {ex.Message}");
 				}
 			}
 		}

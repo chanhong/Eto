@@ -1,20 +1,3 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#endif
-
 namespace Eto.Mac.Forms
 {
 	interface IColorDialogHandler
@@ -169,7 +152,7 @@ namespace Eto.Mac.Forms
 
 		public virtual void OnColorChanged()
 		{
-			_color = Control.Color.UsingColorSpace(NSColorSpace.DeviceRGB).ToEto(false);
+			_color = Control.Color.UsingColorSpace(NSColorSpace.SRGBColorSpace).ToEto();
 			if (_color == _lastColor)
 				return;
 			_lastColor = _color;

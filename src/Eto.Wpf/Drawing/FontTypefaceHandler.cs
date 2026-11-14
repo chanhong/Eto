@@ -1,23 +1,27 @@
-using Eto.Drawing;
-using System.Globalization;
-using System.Linq;
-using swm = System.Windows.Media;
-using sw = System.Windows;
 using swd = System.Windows.Documents;
 using Eto.Wpf.CustomControls.FontDialog;
-using System.Collections.Generic;
-using Eto.Forms;
+using Eto.Shared.Drawing;
 
 namespace Eto.Wpf.Drawing
 {
 	public class FontTypefaceHandler : WidgetHandler<swm.Typeface, FontTypeface>, FontTypeface.IHandler
 	{
-		string name;
-		string localizedName;
+		string _name;
+		string _postScriptName;
+		string _localizedName;
 
-		public FontTypefaceHandler (swm.Typeface type)
+		~FontTypefaceHandler()
+		{
+			Dispose(false);
+		}
+
+		public FontTypefaceHandler(swm.Typeface type)
 		{
 			this.Control = type;
+		}
+
+		public FontTypefaceHandler()
+		{
 		}
 
 		public FontTypefaceHandler(swd.TextSelection range, sw.Controls.RichTextBox control)
@@ -37,14 +41,71 @@ namespace Eto.Wpf.Drawing
 			range.ApplyPropertyValue(swd.TextElement.FontWeightProperty, Control.Weight);
 		}
 
-		public string Name => name ?? (name = NameDictionaryExtensions.GetEnglishName(Control.FaceNames));
+		public string Name => _name ?? (_name = NameDictionaryExtensions.GetEnglishName(Control.FaceNames));
+		
+		public string PostScriptName
+		{
+			get
+			{
+				if (_postScriptName != null)
+					return _postScriptName;
+				// Try to read PostScript name from the font file via OpenTypeFontInfo
+				_postScriptName = GetPostScriptNameFromOpenType();
+				if (!string.IsNullOrWhiteSpace(_postScriptName))
+					return _postScriptName;
 
-		public string LocalizedName => localizedName ?? (localizedName = NameDictionaryExtensions.GetDisplayName(Control.FaceNames));
+				// Fallback: build a PostScript-like name from family/face
+				var family = NameDictionaryExtensions.GetEnglishName(Control.FontFamily.FamilyNames);
+				var face = NameDictionaryExtensions.GetEnglishName(Control.FaceNames);
 
-		public FontStyle FontStyle => WpfConversions.Convert (Control.Style, Control.Weight);
+				if (string.IsNullOrWhiteSpace(family))
+					return null;
+
+				family = family.Replace(" ", string.Empty);
+				face = face?.Replace(" ", string.Empty);
+
+				if (string.IsNullOrWhiteSpace(face) || string.Equals(face, "Regular", StringComparison.OrdinalIgnoreCase))
+					return _postScriptName = family;
+
+				return _postScriptName = $"{family}-{face}";
+			}
+		}
+
+		string GetPostScriptNameFromOpenType()
+		{
+			if (!Control.TryGetGlyphTypeface(out var glyph) || glyph?.FontUri == null)
+				return null;
+
+			if (!glyph.FontUri.IsFile)
+				return null;
+
+			var path = glyph.FontUri.LocalPath;
+			if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+				return null;
+
+			var faceName = NameDictionaryExtensions.GetEnglishName(Control.FaceNames);
+
+			var infos = OpenTypeFontInfo.FromFile(path);
+			if (infos == null)
+				return null;
+
+			// Prefer the matching face in the file
+			var match = infos.Where(i => i != null).FirstOrDefault(i =>
+				string.Equals(i.TypographicSubFamilyName ?? i.SubFamilyName, faceName, StringComparison.OrdinalIgnoreCase))
+				?? infos.FirstOrDefault();
+
+			// NOTE: If your OpenTypeFontInfo uses a different property name, adjust here.
+			return match?.PostScriptName;
+		}
+
+		public string LocalizedName => _localizedName ?? (_localizedName = NameDictionaryExtensions.GetDisplayName(Control.FaceNames));
+
+		public FontStyle FontStyle => WpfConversions.Convert(Control.Style, Control.Weight);
 
 
 		public bool IsSymbol => Control.TryGetGlyphTypeface(out var glyph) && glyph.Symbol;
+
+		public FontFamily Family { get; private set; }
 
 		public bool HasCharacterRanges(IEnumerable<Range<int>> ranges)
 		{
@@ -61,6 +122,91 @@ namespace Eto.Wpf.Drawing
 
 			return true;
 		}
+		
+		internal static string CreateTempDirectoryForFonts()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+			if (!Directory.Exists(dir))
+			{
+				Directory.CreateDirectory(dir);
+			}
+			return dir;
+		}
 
+		string tempFontDirectory;
+
+		public void Create(Stream stream)
+		{
+			tempFontDirectory = CreateTempDirectoryForFonts();
+			// assume everything is an otf so WPF picks it up..  We should detect the format somehow. :/
+			var fileName = Path.Combine(tempFontDirectory, Guid.NewGuid().ToString() + ".otf");
+
+			// Ideally we'd load this from memory somehow like you can when you compile resources
+			// however those type of resources can't be added dynamically as far as I can tell.
+			// However, apparently there's a huge memory leak when doing so anyway, 
+			// so we create a file instead.
+			// https://stackoverflow.com/questions/31452443/wpf-textblock-memory-leak-when-using-font
+			var fileStream = File.Create(fileName);
+			stream.CopyTo(fileStream);
+			fileStream.Close();
+
+			Create(fileName);
+		}
+
+		protected override void Dispose(bool disposing)
+		{
+			base.Dispose(disposing);
+			if (tempFontDirectory != null && Directory.Exists(tempFontDirectory))
+			{
+				try
+				{
+					Directory.Delete(tempFontDirectory);
+				}
+				catch
+				{
+				}
+				tempFontDirectory = null;
+			}
+		}
+
+		public void Create(string fileName)
+		{
+			var fontInfo = OpenTypeFontInfo.FromFile(fileName).Single();
+			string familyName = null;
+			string faceName = null;
+			if (fontInfo != null)
+			{
+				familyName = fontInfo.TypographicFamilyName ?? fontInfo.FamilyName;
+				faceName = fontInfo.TypographicSubFamilyName ?? fontInfo.SubFamilyName;
+			}
+			else
+			{
+				// do we need this??
+				// get the font family name using System.Drawing.. 
+				var fontCollection = new System.Drawing.Text.PrivateFontCollection();
+				fontCollection.AddFontFile(fileName);
+				var families = fontCollection.Families;
+				if (families.Length == 0)
+					throw new ArgumentOutOfRangeException(nameof(fileName), "Could not load font from file");
+				familyName = families[0].Name;
+			}
+
+			// is there no way to use fonts other than from a file system?!? ugh.
+			var path = Path.GetDirectoryName(fileName);
+			var name = $"file:///{path.Replace("\\", "/")}/#{familyName}";
+			var wpffamily = new swm.FontFamily(name);
+			var familyHandler = new FontFamilyHandler(wpffamily);
+			familyHandler.SetTypefaces(new[] { Widget });
+			Family = new FontFamily(familyHandler);
+			if (faceName != null)
+				Control = wpffamily.GetTypefaces().First(r => NameDictionaryExtensions.GetEnglishName(r.FaceNames) == faceName);
+			else
+				Control = wpffamily.GetTypefaces().First();
+		}
+
+		public void Create(FontFamily family)
+		{
+			Family = family;
+		}
 	}
 }

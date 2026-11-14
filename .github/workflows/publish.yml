@@ -1,0 +1,22 @@
+name: Publish
+
+# Pushes a release's packages to nuget.org once it's marked as a full release, rather than a pre-release.
+on:
+  release:
+    types: [ released ]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download nuget packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "*.nupkg" --dir nuget
+
+      - name: Push packages to nuget.org
+        run: dotnet nuget push 'nuget/*.nupkg' --skip-duplicate -s https://api.nuget.org/v3/index.json -k ${{ secrets.NUGET_API_KEY }}

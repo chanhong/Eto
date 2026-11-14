@@ -1,10 +1,4 @@
-using System;
-using Eto.Forms;
 using Eto.GtkSharp.Drawing;
-using Eto.Drawing;
-using System.Linq;
-using System.Collections.Generic;
-using System.Collections;
 
 namespace Eto.GtkSharp.Forms.Controls
 {
@@ -13,8 +7,8 @@ namespace Eto.GtkSharp.Forms.Controls
 		IIndirectBinding<string> _itemTextBinding;
 		readonly Gtk.ScrolledWindow scroll;
 		GtkEnumerableModel<object> model;
-		ContextMenu contextMenu;
 		CollectionHandler collection;
+		int suppressSelectionChanged;
 		public static Size MaxImageSize = new Size(16, 16);
 
 		public override Gtk.Widget ContainerControl
@@ -24,8 +18,8 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		public ListBoxHandler()
 		{
-			model = new GtkEnumerableModel<object>{ Handler = this };
-			
+			model = new GtkEnumerableModel<object> { Handler = this };
+
 			scroll = new Gtk.ScrolledWindow();
 			scroll.ShadowType = Gtk.ShadowType.In;
 			Control = new Gtk.TreeView(new Gtk.TreeModelAdapter(model));
@@ -44,7 +38,6 @@ namespace Eto.GtkSharp.Forms.Controls
 		{
 			base.Initialize();
 			Size = new Size(80, 80);
-			Control.ButtonPressEvent += Connector.HandleTreeButtonPressEvent;
 			Control.Selection.Changed += Connector.HandleSelectionChanged;
 			Control.RowActivated += Connector.HandleTreeRowActivated;
 		}
@@ -60,25 +53,17 @@ namespace Eto.GtkSharp.Forms.Controls
 		{
 			public new ListBoxHandler Handler { get { return (ListBoxHandler)base.Handler; } }
 
-			[GLib.ConnectBefore]
-			public void HandleTreeButtonPressEvent(object o, Gtk.ButtonPressEventArgs args)
-			{
-				if (Handler.contextMenu != null && args.Event.Button == 3 && args.Event.Type == Gdk.EventType.ButtonPress)
-				{
-					var menu = (Gtk.Menu)Handler.contextMenu.ControlObject;
-					menu.Popup();
-					menu.ShowAll();
-				}
-			}
 
 			public void HandleSelectionChanged(object sender, EventArgs e)
 			{
-				Handler.Callback.OnSelectedIndexChanged(Handler.Widget, EventArgs.Empty);
+				if (Handler?.suppressSelectionChanged > 0)
+					return;
+				Handler?.Callback.OnSelectedIndexChanged(Handler.Widget, EventArgs.Empty);
 			}
 
 			public void HandleTreeRowActivated(object o, Gtk.RowActivatedArgs args)
 			{
-				Handler.Callback.OnActivated(Handler.Widget, EventArgs.Empty);
+				Handler?.Callback.OnActivated(Handler.Widget, EventArgs.Empty);
 			}
 		}
 
@@ -94,7 +79,7 @@ namespace Eto.GtkSharp.Forms.Controls
 					if (val >= 0)
 						return val;
 				}
-				
+
 				return -1;
 			}
 			set
@@ -113,12 +98,6 @@ namespace Eto.GtkSharp.Forms.Controls
 			}
 		}
 
-		public ContextMenu ContextMenu
-		{
-			get { return contextMenu; }
-			set { contextMenu = value; }
-		}
-
 		public GLib.Value GetColumnValue(object item, int column, int row)
 		{
 			switch (column)
@@ -132,19 +111,32 @@ namespace Eto.GtkSharp.Forms.Controls
 			}
 		}
 
+		public GLib.GType GetColumnType(int col)
+		{
+			switch (col)
+			{
+				case 0:
+					return GLib.GType.String;
+				case 1:
+					return Gdk.Pixbuf.GType;
+				default:
+					throw new InvalidOperationException();
+			}
+		}
+
 		public class CollectionHandler : EnumerableChangedHandler<object>
 		{
 			public ListBoxHandler Handler { get; set; }
 
 			protected override void OnRegisterCollection(EventArgs e)
 			{
-				Handler.model = new GtkEnumerableModel<object>{ Handler = Handler, Count = Count };
-				Handler.Control.Model = new Gtk.TreeModelAdapter(Handler.model);
+				Handler.model = new GtkEnumerableModel<object> { Handler = Handler, Count = Count };
+				Handler.SetModel(new Gtk.TreeModelAdapter(Handler.model));
 			}
 
 			protected override void OnUnregisterCollection(EventArgs e)
 			{
-				Handler.Control.Model = null;
+				Handler.SetModel(null);
 			}
 
 			public override void AddItem(object item)
@@ -173,9 +165,20 @@ namespace Eto.GtkSharp.Forms.Controls
 
 			public override void RemoveAllItems()
 			{
-				Handler.model = new GtkEnumerableModel<object>{ Handler = Handler };
-				Handler.Control.Model = new Gtk.TreeModelAdapter(Handler.model);
+				Handler.model = new GtkEnumerableModel<object> { Handler = Handler };
+				Handler.SetModel(new Gtk.TreeModelAdapter(Handler.model));
 			}
+		}
+
+		void SetModel(Gtk.ITreeModel newModel)
+		{
+			// GTK reports a selection change whenever the model is replaced, even if nothing was selected
+			var hadSelection = Control.Selection.CountSelectedRows() > 0;
+			suppressSelectionChanged++;
+			Control.Model = newModel;
+			suppressSelectionChanged--;
+			if (hadSelection)
+				Callback.OnSelectedIndexChanged(Widget, EventArgs.Empty);
 		}
 
 		public IEnumerable<object> DataStore
@@ -185,7 +188,7 @@ namespace Eto.GtkSharp.Forms.Controls
 			{
 				if (collection != null)
 					collection.Unregister();
-				collection = new CollectionHandler{ Handler = this };
+				collection = new CollectionHandler { Handler = this };
 				collection.Register(value);
 			}
 		}
@@ -236,6 +239,21 @@ namespace Eto.GtkSharp.Forms.Controls
 					Control.QueueDraw();
 			}
 		}
+
 		public IIndirectBinding<string> ItemKeyBinding { get; set; }
+
+		public IIndirectBinding<Image> ItemImageBinding { get; set; }
+
+		internal static readonly object Border_Key = new object();
+		public BorderType Border
+		{
+			get { return Widget.Properties.Get(Border_Key, BorderType.Bezel); }
+			set
+			{
+				if (Widget.Properties.TrySet(Border_Key, value, BorderType.Bezel))
+					scroll.ShadowType = value.ToGtk();
+			}
+		}
+
 	}
 }

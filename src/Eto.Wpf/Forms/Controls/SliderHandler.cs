@@ -1,9 +1,4 @@
-﻿using System;
-using swc = System.Windows.Controls;
-using sw = System.Windows;
-using Eto.Forms;
-
-namespace Eto.Wpf.Forms.Controls
+﻿namespace Eto.Wpf.Forms.Controls
 {
 	public class EtoSlider : swc.Slider, IEtoWpfControl
 	{
@@ -24,6 +19,7 @@ namespace Eto.Wpf.Forms.Controls
 				Handler = this,
 				Minimum = 0,
 				Maximum = 100,
+				TickFrequency = 5,
 				TickPlacement = swc.Primitives.TickPlacement.BottomRight
 			};
 			Control.ValueChanged += (sender, e) => Callback.OnValueChanged(Widget, EventArgs.Empty);

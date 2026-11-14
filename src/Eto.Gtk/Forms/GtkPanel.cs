@@ -1,12 +1,7 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-
 namespace Eto.GtkSharp.Forms
 {
 	static class GtkPanel
 	{
-		public static readonly object ContextMenu_Key = new object();
 		public static readonly object MinimumSize_Key = new object();
 	}
 
@@ -69,13 +64,6 @@ namespace Eto.GtkSharp.Forms
 			#endif
 		}
 
-
-		public ContextMenu ContextMenu
-		{
-			get => Widget.Properties.Get<ContextMenu>(GtkPanel.ContextMenu_Key);
-			set => Widget.Properties.Set(GtkPanel.ContextMenu_Key, value); // TODO
-		}
-
 		public virtual Size MinimumSize
 		{
 			get => Widget.Properties.Get<Size>(GtkPanel.MinimumSize_Key);
@@ -96,6 +84,10 @@ namespace Eto.GtkSharp.Forms
 				size.Height = Math.Max(size.Height, min.Height);
 
 			base.SetSize(size);
+#if GTK3
+			if (ContainerControl is IGtkPreferredSizeWidget)
+				ContainerControl.SetSizeRequest(min.Width > 0 ? min.Width : -1, min.Height > 0 ? min.Height : -1);
+#endif
 		}
 
 		public virtual Padding Padding

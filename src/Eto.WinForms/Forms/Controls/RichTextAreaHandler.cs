@@ -1,13 +1,3 @@
-using Eto.Forms;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Eto.Drawing;
-using sd = System.Drawing;
-using swf = System.Windows.Forms;
-
 namespace Eto.WinForms.Forms.Controls
 {
 	public class RichTextAreaHandler : TextAreaHandler<RichTextArea, RichTextArea.ICallback>, RichTextArea.IHandler, ITextBuffer
@@ -41,7 +31,11 @@ namespace Eto.WinForms.Forms.Controls
 			if (sel.Length() > 0)
 				SetFontStyle(sel, setFont);
 			else
-				Control.SelectionFont = setFont(Control.SelectionFont);
+			{
+				var sdfont = setFont(Control.SelectionFont);
+				if (sdfont != null)
+					Control.SelectionFont = sdfont;
+			}
 		}
 
 		void SetFontStyle(Range<int> range, Func<sd.Font, sd.Font> setFont)
@@ -66,7 +60,9 @@ namespace Eto.WinForms.Forms.Controls
 					{
 						// at end, set font on last range
 						Control.Select(lastPosition, i - lastPosition + 1);
-						Control.SelectionFont = setFont(font);
+						var sdfont = setFont(font);
+						if (sdfont != null)
+							Control.SelectionFont = sdfont;
 					}
 					currentFont = font;
 				}
@@ -103,9 +99,9 @@ namespace Eto.WinForms.Forms.Controls
 		{
 			SetAttribute(range, () => SelectionBold = bold);
 		}
-		public void SetItalic(Range<int> range, bool bold)
+		public void SetItalic(Range<int> range, bool italic)
 		{
-			SetAttribute(range, () => SelectionBold = bold);
+			SetAttribute(range, () => SelectionItalic = italic);
 		}
 		public void SetUnderline(Range<int> range, bool bold)
 		{
@@ -135,7 +131,7 @@ namespace Eto.WinForms.Forms.Controls
 
 		public FontTypeface SelectionTypeface
 		{
-			get => SelectionFont.Typeface;
+			get => SelectionFont?.Typeface;
 			set
 			{
 				SetSelectionFontStyle(font => value.ToSDFont(font.Size));

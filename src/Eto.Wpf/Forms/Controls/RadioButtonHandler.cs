@@ -1,40 +1,77 @@
-using System;
-using swc = System.Windows.Controls;
-using sw = System.Windows;
-using Eto.Forms;
-using Eto.Drawing;
-
 namespace Eto.Wpf.Forms.Controls
 {
+	public class EtoRadioButton : swc.RadioButton, IEtoWpfControl
+	{
+		public IWpfFrameworkElement Handler { get; set; }
+
+		protected override sw.Size MeasureOverride(sw.Size constraint)
+		{
+			return Handler?.MeasureOverride(constraint, base.MeasureOverride) ?? base.MeasureOverride(constraint);
+		}
+	}
+	
 	public class RadioButtonHandler : WpfControl<swc.RadioButton, RadioButton, RadioButton.ICallback>, RadioButton.IHandler
 	{
-		swc.Border border;
+		swc.Border _border;
+		EtoAccessLabel _labelPart;
 
-		public override sw.FrameworkElement ContainerControl
-		{
-			get { return border; }
-		}
+		EtoAccessLabel LabelPart => _labelPart ??= new EtoAccessLabel();
 
-		public void Create(RadioButton controller)
+		public override sw.FrameworkElement ContainerControl => _border;
+
+		public RadioButtonHandler()
 		{
-			Control = new swc.RadioButton
+			Control = new EtoRadioButton
 			{
+				Handler = this,
 				VerticalAlignment = sw.VerticalAlignment.Center,
 				VerticalContentAlignment = sw.VerticalAlignment.Center,
+				GroupName = Guid.NewGuid().ToString()
 			};
-			if (controller != null)
-			{
-				var parent = (swc.RadioButton)controller.ControlObject;
-				Control.GroupName = parent.GroupName;
-			}
-			else
-				Control.GroupName = Guid.NewGuid().ToString();
 
 			Control.Loaded += Control_Loaded;
-			Control.Checked += (sender, e) => Callback.OnCheckedChanged(Widget, EventArgs.Empty);
-			Control.Unchecked += (sender, e) => Callback.OnCheckedChanged(Widget, EventArgs.Empty);
+			Control.Checked += Control_CheckedChanged;
+			Control.Unchecked += Control_CheckedChanged;
+			Control.Click += (sender, e) => Callback.OnClick(Widget, EventArgs.Empty);
 
-			border = new EtoBorder { Handler = this, Child = Control };
+			_border = new EtoBorder { Handler = this, Child = Control };
+		}
+
+		bool _settingGroup;
+		RadioButton _controller;
+
+		void Control_CheckedChanged(object sender, sw.RoutedEventArgs e)
+		{
+			if (!_settingGroup)
+				Callback.OnCheckedChanged(Widget, EventArgs.Empty);
+		}
+
+		public RadioButton Controller
+		{
+			get => _controller;
+			set
+			{
+				_controller = value;
+				var groupName = value != null ? ((swc.RadioButton)value.ControlObject).GroupName : Guid.NewGuid().ToString();
+				if (Control.GroupName == groupName)
+					return;
+
+				Control.GroupName = groupName;
+				if (Control.IsChecked == true)
+				{
+					// WPF only unchecks the rest of the group when a button becomes checked
+					_settingGroup = true;
+					try
+					{
+						Control.IsChecked = false;
+						Control.IsChecked = true;
+					}
+					finally
+					{
+						_settingGroup = false;
+					}
+				}
+			}
 		}
 
 		void Control_Loaded(object sender, sw.RoutedEventArgs e)
@@ -60,14 +97,38 @@ namespace Eto.Wpf.Forms.Controls
 
 		public string Text
 		{
-			get { return (Control.Content as string).ToEtoMnemonic(); }
-			set { Control.Content = value.ToPlatformMnemonic(); }
+			get => _labelPart?.Text;
+			set
+			{
+				if (value == Text || (string.IsNullOrEmpty(value) && _labelPart == null))
+					return;
+				LabelPart.Text = value;
+				Control.Content = LabelPart;
+			}
 		}
 
 		public override Color BackgroundColor
 		{
-			get { return border.Background.ToEtoColor(); }
-			set { border.Background = value.ToWpfBrush(border.Background); }
+			get { return _border.Background.ToEtoColor(); }
+			set { _border.Background = value.ToWpfBrush(_border.Background); }
+		}
+
+		public bool UseMnemonic
+		{
+			get => _labelPart?.UseMnemonic ?? true;
+			set => LabelPart.UseMnemonic = value;
+		}
+
+		public bool AlwaysShowMnemonic
+		{
+			get => _labelPart?.AlwaysShowMnemonic ?? false;
+			set => LabelPart.AlwaysShowMnemonic = value;
+		}
+
+		public bool EnableMnemonic
+		{
+			get => _labelPart?.EnableMnemonic ?? true;
+			set => LabelPart.EnableMnemonic = value;
 		}
 	}
 }

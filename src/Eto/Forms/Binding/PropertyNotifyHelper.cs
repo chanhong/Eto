@@ -1,46 +1,49 @@
-using System;
-using System.Diagnostics;
-using Eto.Forms;
-using System.ComponentModel;
-using System.Linq.Expressions;
+namespace Eto.Forms;
 
-namespace Eto.Forms
+/// <summary>
+/// Helper to turn a property changed event to an EventHandler for binding
+/// </summary>
+/// <remarks>
+/// Use <see cref="Binding.AddPropertyEvent"/> and <see cref="Binding.RemovePropertyEvent(object,string,EventHandler{EventArgs})"/> to access
+/// this functionality, or better yet use the <see cref="PropertyBinding{T}"/> class.
+/// </remarks>
+class PropertyNotifyHelper
 {
-	/// <summary>
-	/// Helper to turn a property changed event to an EventHandler for binding
-	/// </summary>
-	/// <remarks>
-	/// Use <see cref="Binding.AddPropertyEvent"/> and <see cref="Binding.RemovePropertyEvent"/> to access
-	/// this functionality.
-	/// </remarks>
-	class PropertyNotifyHelper
+	public string PropertyName { get; private set; }
+
+	public event EventHandler<EventArgs> Changed;
+	
+	public PropertyNotifyHelper(INotifyPropertyChanged obj, string propertyName)
 	{
-		public string PropertyName { get; private set; }
+		PropertyName = propertyName;
+		obj.PropertyChanged += obj_PropertyChanged;
+	}
 
-		public event EventHandler<EventArgs> Changed;
+	public void Unregister(object obj)
+	{
+		var notifyObject = obj as INotifyPropertyChanged;
+		if (notifyObject != null)
+			notifyObject.PropertyChanged -= obj_PropertyChanged;
+	}
 
-		public PropertyNotifyHelper(INotifyPropertyChanged obj, string propertyName)
+	void obj_PropertyChanged(object sender, PropertyChangedEventArgs e)
+	{
+		if (e.PropertyName == PropertyName)
 		{
-			PropertyName = propertyName;
-			obj.PropertyChanged += obj_PropertyChanged;
+			if (Changed != null)
+				Changed(sender, EventArgs.Empty);
 		}
+	}
 
-		public void Unregister(object obj)
+	public bool IsHookedTo(EventHandler<EventArgs> eh)
+	{
+		foreach (var invocation in Changed.GetInvocationList())
 		{
-			var notifyObject = obj as INotifyPropertyChanged;
-			if (notifyObject != null)
-				notifyObject.PropertyChanged -= obj_PropertyChanged;
-		}
-
-		void obj_PropertyChanged(object sender, PropertyChangedEventArgs e)
-		{
-			if (e.PropertyName == PropertyName)
+			if (invocation == (Delegate)eh)
 			{
-				if (Changed != null)
-					Changed(sender, EventArgs.Empty);
+				return true;
 			}
 		}
-
+		return false;
 	}
-	
 }

@@ -1,6 +1,3 @@
-using System;
-using Eto.Drawing;
-using Eto.Forms;
 using Eto.GtkSharp.Forms.Controls;
 
 namespace Eto.GtkSharp.Forms.Menu
@@ -13,6 +10,7 @@ namespace Eto.GtkSharp.Forms.Menu
 		where TWidget: ButtonMenuItem
 		where TCallback: ButtonMenuItem.ICallback
 	{
+		string text;
 		string tooltip;
 		Keys shortcut;
 		Image image;
@@ -47,10 +45,13 @@ namespace Eto.GtkSharp.Forms.Menu
 
 			public void HandleActivated(object sender, EventArgs e)
 			{
-				if (Handler.Control.Submenu != null)
-					Handler.ValidateItems();
+				var handler = Handler;
+				if (handler == null)
+					return;
+				if (handler.Control.Submenu != null)
+					handler.ValidateItems();
 				
-				Handler.Callback.OnClick (Handler.Widget, e);
+				handler.Callback.OnClick (handler.Widget, e);
 			}
 		}
 
@@ -62,11 +63,14 @@ namespace Eto.GtkSharp.Forms.Menu
 
 		public string Text
 		{
-			get { return label.Text; }
+			get { return text ?? string.Empty; }
 			set
 			{
-				label.Text = value.ToPlatformMnemonic();
-				label.UseUnderline = true;
+				if (text == value)
+					return;
+				text = value;
+				// One call: gtk_label_set_text clears use-underline, so a mirror of the label would read the marker as text.
+				label.TextWithMnemonic = value.ToPlatformMnemonic();
 			}
 		}
 

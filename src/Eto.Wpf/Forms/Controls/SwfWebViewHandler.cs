@@ -1,18 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using swc = System.Windows.Controls;
-using swn = System.Windows.Navigation;
-using sw = System.Windows;
-using swf = System.Windows.Forms;
-using swi = System.Windows.Input;
-using Eto.Forms;
-using System.Runtime.InteropServices;
 using Eto.CustomControls;
-using Eto.Drawing;
-using System.Threading.Tasks;
-
 namespace Eto.Wpf.Forms.Controls
 {
 	public class SwfWebViewHandler : WpfFrameworkElement<swf.Integration.WindowsFormsHost, WebView, WebView.ICallback>, WebView.IHandler
@@ -58,6 +44,8 @@ namespace Eto.Wpf.Forms.Controls
 				ScriptErrorsSuppressed = true
 			};
 			Browser.HandleCreated += (sender, e) => HookDocumentEvents();
+
+			Browser.ObjectForScripting = new ScriptingObject(this);
 
 			Control = new swf.Integration.WindowsFormsHost
 			{
@@ -145,6 +133,9 @@ namespace Eto.Wpf.Forms.Controls
 						Callback.OnDocumentTitleChanged(Widget, new WebViewTitleEventArgs(Browser.DocumentTitle));
 					};
 					break;
+				case WebView.MessageReceivedEvent:
+					this.Browser.DocumentCompleted += OnDocumentLoadedInjectScript;
+					break;
 				default:
 					base.AttachEvent(handler);
 					break;
@@ -176,6 +167,37 @@ namespace Eto.Wpf.Forms.Controls
 			{
 				return this.Browser.DocumentTitle;
 			}
+		}
+
+		/// <summary>
+		/// Object exposed to JavaScript via window.external
+		/// </summary>
+		[ComVisible(true)]
+		public class ScriptingObject
+		{
+			private readonly SwfWebViewHandler Owner;
+			public ScriptingObject(SwfWebViewHandler owner)
+			{
+				Owner = owner;
+			}
+
+			/// <summary>
+			/// Called from JS via window.eto.postMessage (window.external.postMessage)
+			/// </summary>
+			public void postMessage(string message)
+			{
+				Owner.Callback.OnMessageReceived(Owner.Widget, new WebViewMessageEventArgs(message));
+
+			}
+		}
+
+		/// <summary>
+		/// Called on document load.
+		/// Wraps calls from window.external.postMessage to window.eto.postMessage
+		/// </summary>
+		private void OnDocumentLoadedInjectScript(object sender, EventArgs args)
+		{
+			ExecuteScript(@"window.eto = { postMessage: function(message) { window.external.postMessage(message); } };");
 		}
 
 		public string ExecuteScript(string script)
@@ -242,6 +264,14 @@ namespace Eto.Wpf.Forms.Controls
 		public void ShowPrintDialog()
 		{
 			this.Browser.ShowPrintDialog();
+		}
+
+		public bool SupportsResourceHandlers => false;
+
+		public Uri AddResourceHandler(string host, Func<WebViewResourceRequest, WebViewResourceResponse> handler) => null;
+
+		public void RemoveResourceHandler(string host)
+		{
 		}
 
 		public bool BrowserContextMenuEnabled

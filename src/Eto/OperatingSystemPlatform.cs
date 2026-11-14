@@ -1,113 +1,81 @@
-using System;
-using System.Runtime.InteropServices;
-using System.Reflection;
-using System.IO;
-using System.Linq;
+namespace Eto;
 
-namespace Eto
+/// <summary>
+/// Operating system platform information
+/// </summary>
+/// <remarks>
+/// Access this information from <see cref="EtoEnvironment.Platform"/>
+/// </remarks>
+public sealed class OperatingSystemPlatform
 {
 	/// <summary>
-	/// Operating system platform information
+	/// Gets a value indicating that the current .NET runtime is mono
+	/// </summary>
+	public bool IsMono => _isMono ??= GetIsMono();
+
+	/// <summary>
+	/// Gets a value indicating that the current .NET runtime is .NET Core
+	/// </summary>
+	public bool IsNetCore => _isNetCore ??= GetIsNetCore();
+
+	/// <summary>
+	/// Gets a value indicating that the current .NET runtime is .NET Core
+	/// </summary>
+	/// <since>2.9</since>
+	public bool IsNetFramework => _isNetFramework ??= GetIsNetFramework();
+
+	/// <summary>
+	/// Gets a value indicating that the current OS is windows system
+	/// </summary>
+	public bool IsWindows => _isWindows ??= GetIsWindows();
+
+	/// <summary>
+	/// Gets a value indicating that the current OS is a Windows Runtime (WinRT) system.
+	/// </summary>
+	public bool IsWinRT => _isWinRT ??= GetIsWinRT();
+
+	/// <summary>
+	/// Gets a value indicating that the current OS is a unix-based system
 	/// </summary>
 	/// <remarks>
-	/// Access this information from <see cref="EtoEnvironment.Platform"/>
+	/// This will be true for both Unix (e.g. OS X) and all Linux variants.
 	/// </remarks>
-	public sealed class OperatingSystemPlatform
-	{
-		/// <summary>
-		/// Gets a value indicating that the current .NET runtime is mono
-		/// </summary>
-		public bool IsMono { get; private set; }
+	public bool IsUnix => !IsWindows;
 
-		/// <summary>
-		/// Gets a value indicating that the current .NET runtime is .NET Core
-		/// </summary>
-		public bool IsNetCore { get; private set; }
+	/// <summary>
+	/// Gets a value indicating that the current OS is a Mac OS X system
+	/// </summary>
+	public bool IsMac => _isMac ??= GetIsMac();
 
-		/// <summary>
-		/// Gets a value indicating that the current OS is windows system
-		/// </summary>
-		public bool IsWindows { get; private set; }
+	/// <summary>
+	/// Gets a value indicating that the current OS is a Linux system
+	/// </summary>
+	public bool IsLinux => _isLinux ??= GetIsLinux();
 
-		/// <summary>
-		/// Gets a value indicating that the current OS is a Windows Runtime (WinRT) system.
-		/// </summary>
-		public bool IsWinRT { get; private set; }
 
-		/// <summary>
-		/// Gets a value indicating that the current OS is a unix-based system
-		/// </summary>
-		/// <remarks>
-		/// This will be true for both Unix (e.g. OS X) and all Linux variants.
-		/// </remarks>
-		public bool IsUnix { get; private set; }
+	bool? _isMono;
+	static bool GetIsMono() => Type.GetType("Mono.Runtime", false) != null || Type.GetType("Mono.Interop.IDispatch", false) != null;
 
-		/// <summary>
-		/// Gets a value indicating that the current OS is a Mac OS X system
-		/// </summary>
-		public bool IsMac { get; private set; }
+	bool? _isNetCore;
+	static bool GetIsNetCore() =>
+		RuntimeInformation.FrameworkDescription.StartsWith(".NET Core", StringComparison.OrdinalIgnoreCase)
+		|| (
+			RuntimeInformation.FrameworkDescription.StartsWith(".NET ", StringComparison.OrdinalIgnoreCase)
+			&& !RuntimeInformation.FrameworkDescription.StartsWith(".NET Framework", StringComparison.OrdinalIgnoreCase)
+		);
 
-		/// <summary>
-		/// Gets a value indicating that the current OS is a Linux system
-		/// </summary>
-		public bool IsLinux { get; private set; }
+	bool? _isNetFramework;
+	static bool GetIsNetFramework() => RuntimeInformation.FrameworkDescription.StartsWith(".NET Framework", StringComparison.OrdinalIgnoreCase);
 
-		#if NETSTANDARD
+	bool? _isWindows;
+	static bool GetIsWindows() => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
-		static string GetUnixType()
-		{
-			// need at least one of these platforms if we're detecting the unix type (mac/linux) in PCL
-			var detectType = Type.GetType("Eto.PlatformDetect, Eto.XamMac2", false)
-			                 ?? Type.GetType("Eto.PlatformDetect, Eto.Mac64", false)
-			                 ?? Type.GetType("Eto.PlatformDetect, Eto.XamMac", false)
-			                 ?? Type.GetType("Eto.PlatformDetect, Eto.Mac", false)
-			                 ?? Type.GetType("Eto.PlatformDetect, Eto.Gtk", false)
-			                 ?? Type.GetType("Eto.PlatformDetect, Eto.Gtk2", false)
-			                 ?? Type.GetType("Eto.PlatformDetect, Eto.Gtk3", false);
-			if (detectType != null)
-			{
-				var getUnixTypeMethod = detectType.GetRuntimeMethod("GetUnixType", new Type[] { });
-				if (getUnixTypeMethod != null)
-					return (string)getUnixTypeMethod.Invoke(null, null);
-			}
-			return string.Empty;
-		}
+	bool? _isWinRT;
+	static bool GetIsWinRT() => Type.GetType("Windows.ApplicationModel.DesignMode, Windows, ContentType=WindowsRuntime", false) != null;
 
-		#else
-		
-		static string GetUnixType()
-		{
-			return PlatformDetect.GetUnixType();
-		}
+	bool? _isMac;
+	static bool GetIsMac() => RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
 
-		#endif
-
-		/// <summary>
-		/// Initializes a new instance of the OperatingSystemPlatform class
-		/// </summary>
-		public OperatingSystemPlatform()
-		{
-#if NETSTANDARD2_0
-			if (RuntimeInformation.FrameworkDescription.StartsWith(".NET Core", StringComparison.OrdinalIgnoreCase))
-				IsNetCore = true;
-#endif
-			if (Type.GetType("Mono.Runtime", false) != null || Type.GetType("Mono.Interop.IDispatch", false) != null)
-				IsMono = true;
-
-			var winRtType = Type.GetType("Windows.ApplicationModel.DesignMode, Windows, ContentType=WindowsRuntime");
-			IsWinRT = winRtType != null;
-
-			if (Environment.NewLine == "\r\n")
-				IsWindows = true;
-			else
-			{
-				IsUnix = true;
-
-				if (GetUnixType().ToUpperInvariant() == "DARWIN")
- 					IsMac = true;
-				else
-					IsLinux = true;
-			}
-		}
-	}
+	bool? _isLinux;
+	static bool GetIsLinux() => RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
 }

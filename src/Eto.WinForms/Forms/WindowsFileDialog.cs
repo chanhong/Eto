@@ -1,33 +1,42 @@
-using System;
-using System.IO;
-using System.Linq;
-using sd = System.Drawing;
-using swf = System.Windows.Forms;
-using Eto.Forms;
-using System.Collections.Generic;
-
 namespace Eto.WinForms.Forms
 {
 	public abstract class WindowsFileDialog<TControl, TWidget> : WidgetHandler<TControl, TWidget>, FileDialog.IHandler
 		where TControl : swf.FileDialog
 		where TWidget : FileDialog
 	{
+		protected override void Initialize()
+		{
+			base.Initialize();
+			Control.RestoreDirectory = true;
+		}
+
+		// Cache the full path so FileName round-trips it; cleared on OK so the chosen path wins.
+		string fileName;
+
 		public string FileName
 		{
-			get { return Control.FileName; }
+			get { return fileName ?? Control.FileName; }
 			set
 			{
+				fileName = string.IsNullOrEmpty(value) ? null : value;
 				var dir = Path.GetDirectoryName(value);
 				if (!string.IsNullOrEmpty(dir))
 					Control.InitialDirectory = dir;
+				// A full path here would show verbatim in the dialog's file name box and override Directory.
 				Control.FileName = Path.GetFileName(value);
 			}
 		}
 
 		public Uri Directory
 		{
-			get { return new Uri(Control.InitialDirectory); }
-			set { Control.InitialDirectory = value.AbsoluteUri; }
+			get { return string.IsNullOrEmpty(Control.InitialDirectory) ? null : new Uri(Control.InitialDirectory); }
+			set
+			{
+				Control.InitialDirectory = value.LocalPath;
+				// Last one wins: move a full-path FileName into the new folder so it matches what the dialog shows.
+				if (!string.IsNullOrEmpty(Path.GetDirectoryName(fileName)))
+					fileName = Path.Combine(value.LocalPath, Path.GetFileName(fileName));
+			}
 		}
 
 		public void InsertFilter(int index, FileFilter filter)
@@ -88,6 +97,9 @@ namespace Eto.WinForms.Forms
 
 		public DialogResult ShowDialog(Window parent)
 		{
+			if (parent?.HasFocus == false)
+				parent.Focus();
+
 			SetFilters();
 
 			swf.DialogResult dr;
@@ -95,7 +107,10 @@ namespace Eto.WinForms.Forms
 				dr = Control.ShowDialog((swf.Control)parent.ControlObject);
 			else
 				dr = Control.ShowDialog();
-			return dr.ToEto();
+			var result = dr.ToEto();
+			if (result == DialogResult.Ok)
+				fileName = null;
+			return result;
 		}
 	}
 }

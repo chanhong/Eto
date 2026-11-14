@@ -1,9 +1,3 @@
-using System;
-using System.Threading;
-using Eto.Forms;
-using Eto.Drawing;
-
-using System.Globalization;
 using Eto.GtkSharp.Forms;
 
 namespace Eto.GtkSharp.CustomControls
@@ -13,6 +7,7 @@ namespace Eto.GtkSharp.CustomControls
 		DateTime? selectedDate;
 		private DateComboBoxDialog dlg;
 		DateTimePickerMode mode = DateTimePickerMode.DateTime;
+		bool settingValue;
 
 		public event EventHandler DateChanged;
 
@@ -56,6 +51,20 @@ namespace Eto.GtkSharp.CustomControls
 		public bool AllowInvalidDates { get; set; }
 
 		void SetValue()
+		{
+			// the text may not hold the full value (e.g. only the time), so don't parse it back
+			settingValue = true;
+			try
+			{
+				SetEntryText();
+			}
+			finally
+			{
+				settingValue = false;
+			}
+		}
+
+		void SetEntryText()
 		{
 			if (selectedDate == null)
 			{
@@ -160,7 +169,7 @@ namespace Eto.GtkSharp.CustomControls
 
 		void HandleChanged(object sender, EventArgs e)
 		{
-			var isValid = IsDateValid();
+			var isValid = settingValue || IsDateValid();
 			if (!ValidateDateRange())
 			{
 				SetValue();

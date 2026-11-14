@@ -1,5 +1,3 @@
-using Eto.Drawing;
-
 namespace Eto.GtkSharp.Drawing
 {
 	/// <summary>
@@ -26,10 +24,10 @@ namespace Eto.GtkSharp.Drawing
 				}
 			}
 
-			public void Apply(GraphicsHandler graphics)
+			public void Apply(Cairo.Context context)
 			{
 				if (!ReferenceEquals(Transform, null))
-					graphics.Control.Transform(Transform);
+					context.Transform(Transform);
 
 				if (opacityImage == null)
 				{
@@ -49,19 +47,33 @@ namespace Eto.GtkSharp.Drawing
 					}
 				}
 				var img = opacityImage ?? Image;
-				Gdk.CairoHelper.SetSourcePixbuf(graphics.Control, img.ToGdk(), 0, 0);
-
-				var pattern = graphics.Control.GetSource();
-				var surfacePattern = pattern as Cairo.SurfacePattern;
-				if (surfacePattern != null)
+				if (img.Handler is BitmapHandler bitmapHandler)
 				{
-					surfacePattern.Extend = Cairo.Extend.Repeat;
+					// reuse the bitmap's surface, as converting the image for every fill is slow
+					var surface = bitmapHandler.GetCairoSurface();
+					if (!ReferenceEquals(surface, patternSurface))
+					{
+						pattern?.Dispose();
+						pattern = new Cairo.SurfacePattern(surface) { Extend = Cairo.Extend.Repeat };
+						patternSurface = surface;
+					}
+					context.SetSource(pattern);
+				}
+				else
+				{
+					Gdk.CairoHelper.SetSourcePixbuf(context, img.ToGdk(), 0, 0);
+					using (var source = context.GetSource())
+					{
+						if (source is Cairo.SurfacePattern surfacePattern)
+							surfacePattern.Extend = Cairo.Extend.Repeat;
+					}
 				}
 				if (!ReferenceEquals(InverseTransform, null))
-					graphics.Control.Transform(InverseTransform);
-
-				pattern.Dispose();
+					context.Transform(InverseTransform);
 			}
+
+			Cairo.SurfacePattern pattern;
+			Cairo.Surface patternSurface;
 		}
 
 		public IMatrix GetTransform(TextureBrush widget)
@@ -84,9 +96,9 @@ namespace Eto.GtkSharp.Drawing
 			};
 		}
 
-		public override void Apply(object control, GraphicsHandler graphics)
+		public override void Apply(object control, Cairo.Context context)
 		{
-			((TextureBrushObject)control).Apply(graphics);
+			((TextureBrushObject)control).Apply(context);
 		}
 
 		public float GetOpacity(TextureBrush widget)

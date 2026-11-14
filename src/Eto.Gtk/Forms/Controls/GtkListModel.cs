@@ -1,6 +1,3 @@
-using System;
-using Eto.Forms;
-
 namespace Eto.GtkSharp.Forms.Controls
 {
 	public interface IGtkListModelHandler<TItem>
@@ -13,7 +10,7 @@ namespace Eto.GtkSharp.Forms.Controls
 		
 		GLib.Value GetColumnValue (TItem item, int column, int row, Gtk.TreeIter iter);
 
-		int GetRowOfItem (TItem item);
+		int GetRowOfItem (object item);
 	}
 
 	public class GtkListModel<TItem> : GLib.Object, ITreeModelImplementor

@@ -1,43 +1,8 @@
-using System;
-using Eto.Drawing;
-using Eto.Forms;
 using Eto.Mac.Forms;
 using Eto.Mac.Drawing;
 using Eto.Mac.Forms.Printing;
-using System.Linq;
 using Eto.Mac.Forms.Menu;
 
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-using ImageIO;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-using MonoMac.ImageIO;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
 
 namespace Eto.Mac
 {
@@ -49,49 +14,73 @@ namespace Eto.Mac
 				return nscolor;
 			if (color.ControlObject is CGColor cgcolor && MacVersion.IsAtLeast(10, 8))
 				return NSColor.FromCGColor(cgcolor);
-			return NSColor.FromDeviceRgba(color.R, color.G, color.B, color.A);
+			return NSColor.FromSrgb(color.R, color.G, color.B, color.A);
 		}
 
-		public static NSColor ToNSUI(this Color color, bool calibrated)
-		{
-			if (color.ControlObject is NSColor nscolor)
-				return nscolor;
-			if (color.ControlObject is CGColor cgcolor && MacVersion.IsAtLeast(10, 8))
-				return NSColor.FromCGColor(cgcolor);
-			return calibrated
-				? NSColor.FromCalibratedRgba(color.R, color.G, color.B, color.A)
-				: NSColor.FromDeviceRgba(color.R, color.G, color.B, color.A);
-		}
-
-		public static Color ToEtoWithAppearance(this NSColor color, bool calibrated = true)
-		{
-			if (color == null)
-				return Colors.Transparent;
-			if (!MacVersion.IsAtLeast(10, 9))
-				return color.ToEto(calibrated);
-
-			// use the current appearance to get the proper RGB values (it can be different than when the application started).
-			NSAppearance saved = NSAppearance.CurrentAppearance;
-			var appearance = NSApplication.SharedApplication.MainWindow?.EffectiveAppearance;
-			if (appearance != null)
-				NSAppearance.CurrentAppearance = appearance;
-
-			var result = color.ToEto(calibrated);
-			NSAppearance.CurrentAppearance = saved;
-			return result;
-		}
-
-		public static Color ToEto(this NSColor color, bool calibrated = false)
+		[Obsolete("Use ToEtoWithAppearance(NSColor) instead")]
+		public static Color ToEtoWithAppearance(this NSColor color, bool calibrated) => ToEtoWithAppearance(color);
+		
+		public static Color ToEtoWithAppearance(this NSColor color)
 		{
 			if (color == null)
 				return Colors.Transparent;
 
-			var colorspace = calibrated ? NSColorSpace.CalibratedRGB : NSColorSpace.DeviceRGB;
-			var converted = color.UsingColorSpaceFast(colorspace);
+			if (MacVersion.IsAtLeast(11, 0))
+			{
+				// use the effective appearance to get the proper RGB values, 
+				// otherwise it uses NSAppearance.CurrentDrawingAppearance which can be different than the app appearance
+				// when not in a drawing context
+				var effectiveAppearance = NSApplication.SharedApplication.EffectiveAppearance;
+				if (NSAppearance.CurrentDrawingAppearance == effectiveAppearance)
+					return color.ToEto();
+					
+				Color result = Colors.Black;
+				effectiveAppearance.PerformAsCurrentDrawingAppearance(() =>
+				{
+					result = color.ToEto();
+				});
+				return result;
+			}
+
+			if (MacVersion.IsAtLeast(10, 14))
+			{
+				// for macOS 10.14/10.15.. should I really be supporting this?  meh.
+				// Save and restore the current appearance around the color conversion
+#pragma warning disable CA1422
+				NSAppearance saved = NSAppearance.CurrentAppearance;
+				var effectiveAppearance = NSApplication.SharedApplication.EffectiveAppearance;
+				if (saved == effectiveAppearance)
+					return color.ToEto();
+					
+				if (effectiveAppearance != null)
+					NSAppearance.CurrentAppearance = effectiveAppearance;
+
+				var result = color.ToEto();
+				NSAppearance.CurrentAppearance = saved;
+#pragma warning restore CA1422
+				return result;
+			}
+			
+			return color.ToEto();
+		}
+
+		[Obsolete("Use ToEto(NSColor) instead")]
+		public static Color ToEto(this NSColor color, bool calibrated) => ToEto(color);
+
+		public static Color ToEto(this NSColor color) => ToEto(color, null);
+	
+		public static Color ToEto(this NSColor color, NSColorSpace colorspace)
+		{
+			if (color == null)
+				return Colors.Transparent;
+
+			colorspace ??= NSColorSpace.SRGBColorSpace;
+
+			var converted = color.UsingColorSpace(colorspace);
 			if (converted == null)
 			{
 				// Convert named (e.g. system) colors to RGB using its CGColor
-				converted = color.ToCG().ToNS().UsingColorSpaceFast(colorspace);
+				converted = color.ToCG().ToNS().UsingColorSpace(colorspace);
 
 				if (converted == null)
 					return new Color(color, 0, 0, 0, 1f);
@@ -100,7 +89,7 @@ namespace Eto.Mac
 			converted.GetRgba(out red, out green, out blue, out alpha);
 			return new Color(color, (float)red, (float)green, (float)blue, (float)alpha);
 		}
-
+		
 		public static NSRange ToNS(this Range<int> range)
 		{
 			return new NSRange(range.Start, range.End - range.Start + 1);
@@ -222,15 +211,103 @@ namespace Eto.Mac
 
 		public static MouseEventArgs GetMouseEvent(IMacViewHandler handler, NSEvent theEvent, bool includeWheel)
 		{
-			var view = handler.ContainerControl;
-			var pt = theEvent.LocationInWindow;
-			pt = handler.GetAlignmentPointForFramePoint(pt);
-			Keys modifiers = theEvent.ModifierFlags.ToEto();
-			MouseButtons buttons = theEvent.GetMouseButtons();
 			SizeF? delta = null;
-			if (includeWheel)
-				delta = new SizeF((float)theEvent.DeltaX, (float)theEvent.DeltaY);
-			return new MouseEventArgs(buttons, modifiers, pt.ToEto(view), delta);
+			PointF point;
+			Keys modifiers;
+			MouseButtons buttons;
+			bool isDirectionInverted = false;
+			if (theEvent != null)
+			{
+				NSView view = handler.ContainerControl;
+				var pt = theEvent.LocationInWindow;
+				pt = handler.GetAlignmentPointForFramePoint(pt);
+				if (theEvent.Window == null)
+				{
+					// flip to top down first
+					pt.Y = NSScreen.Screens[0].Frame.Height - pt.Y;
+					point = handler.Widget.PointFromScreen(pt.ToEto());
+				}
+				else if (view == null || view.Window != theEvent.Window)
+				{
+					var loc = theEvent.Window.Frame.Location.ToEto();
+					pt.X += loc.X;
+					pt.Y += loc.Y;
+					pt.Y = NSScreen.Screens[0].Frame.Height - pt.Y;
+					point = handler.Widget.PointFromScreen(pt.ToEto());
+				}
+				else
+				{
+					point = pt.ToEto(view);
+				}
+					
+				if (includeWheel)
+				{
+					delta = theEvent.GetWheelDelta();
+					// only valid for scroll wheel and flick events, which is all includeWheel is used for
+					isDirectionInverted = theEvent.IsDirectionInvertedFromDevice;
+				}
+				modifiers = theEvent.ModifierFlags.ToEto();
+				buttons = theEvent.GetMouseButtons();
+			}
+			else
+			{
+				point = handler.Widget.PointFromScreen(Mouse.Position);
+				modifiers = Keyboard.Modifiers;
+				buttons = Mouse.Buttons;
+			}
+			return new MouseEventArgs(buttons, modifiers, point, delta, 1.0f, isDirectionInverted);
+		}
+
+		// AppKit's line-based deltas are the precise ones divided by 10 (measured on a trackpad)
+		const double PreciseScrollPointsPerLine = 10;
+
+		// smallest line-based delta AppKit reports for precise devices
+		const double MinimumPreciseScrollLines = 0.3;
+
+		static double s_wheelDeltaTimestamp;
+		static SizeF s_wheelDelta;
+		static double s_wheelCarryX;
+		static double s_wheelCarryY;
+
+		/// <summary>
+		/// Gets the scroll wheel delta in lines, using precise deltas when the device has them.
+		/// </summary>
+		public static SizeF GetWheelDelta(this NSEvent theEvent)
+		{
+			if (!theEvent.HasPreciseScrollingDeltas)
+				return new SizeF((float)theEvent.DeltaX, (float)theEvent.DeltaY);
+
+			// each view the event passes through asks for its delta, so only accumulate once per event
+			if (theEvent.Timestamp == s_wheelDeltaTimestamp)
+				return s_wheelDelta;
+			s_wheelDeltaTimestamp = theEvent.Timestamp;
+
+			var phase = theEvent.Phase;
+			if (phase.HasFlag(NSEventPhase.Began) || phase.HasFlag(NSEventPhase.MayBegin))
+				s_wheelCarryX = s_wheelCarryY = 0;
+
+			s_wheelDelta = new SizeF(
+				(float)AccumulateWheelDelta(ref s_wheelCarryX, theEvent.ScrollingDeltaX),
+				(float)AccumulateWheelDelta(ref s_wheelCarryY, theEvent.ScrollingDeltaY));
+			return s_wheelDelta;
+		}
+
+		// AppKit's line-based deltas drop most slow trackpad movement, so report the same minimum step but carry
+		// the remainder over to later events instead
+		static double AccumulateWheelDelta(ref double carry, double points)
+		{
+			var lines = points / PreciseScrollPointsPerLine;
+			if (lines == 0)
+				return 0;
+			// start over when the direction changes so it responds straight away
+			if (Math.Sign(lines) != Math.Sign(carry))
+				carry = 0;
+			carry += lines;
+			if (Math.Abs(carry) < MinimumPreciseScrollLines)
+				return 0;
+			var result = carry;
+			carry = 0;
+			return result;
 		}
 
 		public static MouseButtons GetMouseButtons(this NSEvent theEvent)
@@ -268,6 +345,9 @@ namespace Eto.Mac
 							buttons |= MouseButtons.Middle;
 							break;
 					}
+					break;
+				default:
+					buttons = Mouse.Buttons;
 					break;
 			}
 			return buttons;
@@ -385,10 +465,41 @@ namespace Eto.Mac
 			}
 		}
 
+		/// <summary>
+		/// Gets the character input for the key event, or null if the key does not correspond to a character.
+		/// </summary>
+		/// <remarks>
+		/// macOS reports non-character keys such as the arrow keys, function keys, page up/down, home/end, etc.
+		/// using the unicode private use area reserved for function keys, so exclude those.
+		/// </remarks>
+		static char? GetKeyChar(NSEvent theEvent)
+		{
+			var characters = theEvent.Characters;
+			if (string.IsNullOrEmpty(characters))
+				return null;
+			var keyChar = characters[0];
+			if (keyChar >= 0xF700 && keyChar <= 0xF8FF)
+				return null;
+			return keyChar;
+		}
+
 		public static KeyEventArgs ToEtoKeyEventArgs(this NSEvent theEvent)
 		{
-			char keyChar = !string.IsNullOrEmpty(theEvent.Characters) ? theEvent.Characters[0] : '\0';
-			Keys key = KeyMap.MapKey(theEvent.KeyCode, theEvent.ModifierFlags);
+			char? keyChar = GetKeyChar(theEvent);
+			var charactersIgnoringModifiers = theEvent.CharactersIgnoringModifiers;
+			Keys key = Keys.None;
+			if (!string.IsNullOrEmpty(charactersIgnoringModifiers)
+				&& !char.IsControl(charactersIgnoringModifiers[0])
+				&& !theEvent.ModifierFlags.HasFlag(NSEventModifierMask.NumericPadKeyMask))
+			{
+				key = KeyMap.Convert(charactersIgnoringModifiers, 0);
+			}
+			if (key == Keys.None)
+			{
+				// Use the physical key for non-character and numeric-pad keys. NSEvent.KeyCode
+				// does not respect alternative keyboard layouts for printable keys.
+				key = KeyMap.MapKey(theEvent.KeyCode, theEvent.ModifierFlags);
+			}
 			KeyEventArgs kpea;
 			Keys modifiers = theEvent.ModifierFlags.ToEto();
 			key |= modifiers;
@@ -562,7 +673,12 @@ namespace Eto.Mac
 			}
 		}
 
-		public static DataObject ToEto(this NSPasteboard pasteboard) => new DataObject(new DataObjectHandler(pasteboard));
+		public static DataObject ToEto(this NSPasteboard pasteboard)
+		{
+			if (pasteboard == null)
+				return null;
+			return new DataObject(new DataObjectHandler(pasteboard));
+		}
 
 		public static NSPasteboard ToNS(this DataObject data) => DataObjectHandler.GetControl(data);
 
@@ -658,6 +774,14 @@ namespace Eto.Mac
 				default:
 					throw new NotSupportedException();
 			}
+		}
+		
+		public static Image ToEto(this NSImage image)
+		{
+			if (image.Representations().Length == 1)
+				return new Bitmap(new BitmapHandler(image));
+			else
+				return new Icon(new IconHandler(image));
 		}
 	}
 }

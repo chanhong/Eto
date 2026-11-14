@@ -1,13 +1,7 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
-<Panel 
-x:Class="Eto.Test.Sections.Serialization.Xaml.Test" 
-xmlns="http://schema.picoe.ca/eto.forms" 
-xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" 
-xmlns:e="clr-namespace:Eto.Test.Sections.Controls;assembly=Eto.Test" 
-xmlns:l="clr-namespace:Eto.Test.Sections.Serialization.Xaml;assembly=Eto.Test" 
->
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Panel xmlns:e="clr-namespace:Eto.Test.Sections.Controls">
 	<Panel.Properties>
-		<l:MyConverter x:Key="myConverter"/>
+		<local:MyConverter x:Key="myConverter"/>
 	</Panel.Properties>
 	<TabControl>
 		<TabPage Text="Table Layout">
@@ -64,9 +58,16 @@ xmlns:l="clr-namespace:Eto.Test.Sections.Serialization.Xaml;assembly=Eto.Test"
 			</TableLayout>
 		</TabPage>
 		<TabPage Text="Stack Layout">
-			<StackLayout>
+			<StackLayout Spacing="4" Padding="10">
 				<Label>Button that executes command from model:</Label>
 				<Button Command="{Binding ClickMe}">Click Me!</Button>
+				<StackLayoutItem>
+					<StackLayout Orientation="Horizontal">
+						<RadioButton x:Name="MyRadioButton" Text="Option 1" />
+						<RadioButton Text="Option 2" Controller="{x:Reference MyRadioButton}" />
+						<RadioButton Text="Option 3" Controller="{x:Reference MyRadioButton}" />
+					</StackLayout>
+				</StackLayoutItem>
 				<StackLayoutItem Expand="true" HorizontalAlignment="Stretch">
 					<TextArea />
 				</StackLayoutItem>

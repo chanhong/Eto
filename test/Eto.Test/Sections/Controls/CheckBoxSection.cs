@@ -1,6 +1,3 @@
-﻿using Eto.Drawing;
-using Eto.Forms;
-
 namespace Eto.Test.Sections.Controls
 {
 	[Section("Controls", typeof(CheckBox))]
@@ -20,8 +17,20 @@ namespace Eto.Test.Sections.Controls
 
 			layout.Add(ThreeStateInitialValue());
 
-			layout.Add(new CheckBox { Text = "With Larger Font", Font = SystemFonts.Label(40) });
-			layout.Add(new CheckBox { Text = "With Smaller Font", Font = SystemFonts.Label(6) });
+			if (Platform.Supports<Font>())
+			{
+				layout.Add(new CheckBox { Text = "With Larger Font", Font = SystemFonts.Label(40) });
+				layout.Add(new CheckBox { Text = "With Smaller Font", Font = SystemFonts.Label(6) });
+			}
+
+			layout.AddSeparateRow(new CheckBox { Text = "Should be aligned with text" }, new Panel { Size = new Size(50, 50), BackgroundColor = Colors.Green });
+
+			layout.AddSeparateRow(new CheckBox(), new Panel
+			{
+				Size = new Size(50, 50),
+				BackgroundColor = Colors.Green,
+				Content = new Label { VerticalAlignment = VerticalAlignment.Center, Text = "Should be aligned with text" }
+			});
 
 			layout.Add(null, false, true);
 

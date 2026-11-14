@@ -1,38 +1,4 @@
-﻿using System;
-using Eto.Forms;
-using Eto.Drawing;
-using Eto.Mac.Drawing;
-using System.Linq;
-using System.Collections.Generic;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using ObjCRuntime;
-using MobileCoreServices;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.MobileCoreServices;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
+﻿using Eto.Mac.Drawing;
 namespace Eto.Mac.Forms
 {
 	public class MemoryDataObjectHandler : WidgetHandler<Dictionary<string, MemoryDataObjectHandler.BaseItem>, DataObject, DataObject.ICallback>, DataObject.IHandler, IDataObject, IDataObjectHandler
@@ -227,14 +193,40 @@ namespace Eto.Mac.Forms
 			return false;
 		}
 
-		public bool TryGetObject(string type, out object value)
+		public bool TryGetObject(string type, Type objectType, out object value)
 		{
-			var colorItem = GetDataItem<ColorItem>(type);
-			if (colorItem != null)
+			if (objectType == null || objectType == typeof(Color))
 			{
-				value = colorItem.Value.ToEto();
-				return true;
+				var colorItem = GetDataItem<ColorItem>(type);
+				if (colorItem != null)
+				{
+					value = colorItem.Value.ToEto();
+					return true;
+				}
 			}
+			if (objectType == null || objectType == typeof(string))
+			{
+				if (type == NSPasteboard.NSPasteboardTypeString
+					|| type == NSPasteboard.NSPasteboardTypeTabularText
+					|| type == NSPasteboard.NSPasteboardTypeUrl
+					|| type == NSPasteboard.NSPasteboardTypeFileUrl
+					|| type == NSPasteboard.NSPasteboardTypeRTF
+					|| type == NSPasteboard.NSPasteboardTypeHTML)
+				{
+					value = GetString(type);
+					return true;
+				}
+			}
+			if (objectType == null || objectType == typeof(Bitmap))
+			{
+				if (type == NSPasteboard.NSPasteboardTypeTIFF
+					|| type == NSPasteboard.NSPasteboardTypePNG)
+				{
+					value = new Bitmap(new MemoryStream(GetData(type)));
+					return true;
+				}
+			}
+			
 			value = null;
 			return false;
 		}
@@ -242,5 +234,7 @@ namespace Eto.Mac.Forms
 		public void SetObject(object value, string type) => Widget.SetObject(value, type);
 
 		public T GetObject<T>(string type) => Widget.GetObject<T>(type);
+		public object GetObject(string type, Type objectType) => Widget.GetObject(type, objectType);
+		public object GetObject(string type) => Widget.GetObject(type);
 	}
 }

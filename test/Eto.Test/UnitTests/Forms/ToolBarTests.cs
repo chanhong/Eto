@@ -1,8 +1,4 @@
-using System;
-using System.Threading;
-using Eto.Forms;
 using NUnit.Framework;
-using Eto.Drawing;
 namespace Eto.Test.UnitTests.Forms
 {
 	[TestFixture]
@@ -19,7 +15,6 @@ namespace Eto.Test.UnitTests.Forms
 			{
 				GC.Collect();
 				GC.WaitForPendingFinalizers();
-				Thread.Sleep(10);
 				var item = new ButtonToolItem { Text = i.ToString() };
 				tb.Items.Add(item);
 

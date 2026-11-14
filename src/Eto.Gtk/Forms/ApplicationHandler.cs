@@ -1,16 +1,5 @@
-using System;
-using Eto.Forms;
-using System.Diagnostics;
-using System.Threading;
-using System.ComponentModel;
 using Eto.GtkSharp.Drawing;
-using Eto.Drawing;
-using System.Collections.Generic;
 using Eto.GtkSharp.Forms;
-using System.IO;
-using System.Reflection;
-using System.Linq;
-
 namespace Eto.GtkSharp.Forms
 {
 #if GTK3
@@ -54,7 +43,10 @@ namespace Eto.GtkSharp.Forms
 
 		public void RunIteration()
 		{
-			Gtk.Application.RunIteration();
+			var timeoutTicks = Stopwatch.Frequency / 10; // 100 ms
+			var start = Stopwatch.GetTimestamp();
+			while (Gtk.Application.EventsPending() && Stopwatch.GetTimestamp() - start < timeoutTicks)
+				Gtk.Application.RunIteration(false);
 		}
 
 		public void Restart()
@@ -85,13 +77,21 @@ namespace Eto.GtkSharp.Forms
 								form.BringToFront();
 						};
 					}
-					var bmp = new Gdk.Pixbuf(Gdk.Colorspace.Rgb, true, 8, 32, 32);
-					using (var graphics = new Graphics(new Bitmap(new BitmapHandler(bmp))))
+
+					var pixbuf = new Gdk.Pixbuf(Gdk.Colorspace.Rgb, true, 8, 32, 32);
+					using(var bmpHandler = new BitmapHandler(pixbuf))
 					{
-						graphics.Clear();
-						DrawBadgeLabel(graphics, new Size(bmp.Width, bmp.Height), badgeLabel);
+						using(var bitmap     = new Bitmap(bmpHandler))
+						{
+							using (var graphics = new Graphics(bitmap))
+							{
+								graphics.Clear();
+								DrawBadgeLabel(graphics, new Size(pixbuf.Width, pixbuf.Height), badgeLabel);
+							}
+						}
 					}
-					statusIcon.Pixbuf = bmp;
+
+					statusIcon.Pixbuf = pixbuf;
 					statusIcon.Visible = true;
 				}
 				else if (statusIcon != null)
@@ -104,11 +104,17 @@ namespace Eto.GtkSharp.Forms
 			var rect = new Rectangle(size);
 			rect.Inflate(-2, -2);
 			graphics.FillEllipse(Brushes.Red, rect);
-			graphics.DrawEllipse(new Pen(Colors.White, 2), rect);
-			var font = new Font(SystemFont.Bold, 10);
-			var labelSize = graphics.MeasureString(font, badgeLabel);
-			var labelPosition = ((PointF)(rect.Size - labelSize) / 2) + rect.Location;
-			graphics.DrawText(font, Colors.White, labelPosition, badgeLabel);
+			using (var pen = new Pen(Colors.White, 2))
+			{
+				graphics.DrawEllipse(pen, rect);
+			}
+			using (var font = new Font(SystemFont.Bold, 10))
+			{
+				var labelSize     = graphics.MeasureString(font, badgeLabel);
+				var labelPosition = ((PointF)(rect.Size - labelSize) / 2) + rect.Location;
+				graphics.DrawText(font, Colors.White, labelPosition, badgeLabel);
+			}
+
 			graphics.Flush();
 		}
 
@@ -170,15 +176,13 @@ namespace Eto.GtkSharp.Forms
 		}
 
 
-		protected virtual void OnIsActiveChanged(EventArgs e) => _IsActiveChanged?.Invoke(this, e);
-
 		UITimer _timer;
 		bool? _isActive;
 		bool _didGetFocus;
 		internal void TriggerIsActiveChanged(bool gotFocus)
 		{
 			// don't do anything until we really need to know.
-			if (_IsActiveChanged == null)
+			if (!IsEventHandled(Application.IsActiveChangedEvent))
 				return;
 
 			_didGetFocus |= gotFocus;
@@ -214,7 +218,7 @@ namespace Eto.GtkSharp.Forms
 					if (_isActive != isActive)
 					{
 						_isActive = isActive;
-						OnIsActiveChanged(EventArgs.Empty);
+						Callback.OnIsActiveChanged(Widget, EventArgs.Empty);
 					}
 				};
 			}
@@ -248,36 +252,6 @@ namespace Eto.GtkSharp.Forms
 			new WindowActiveHelper(window);
 		}
 
-		EventHandler _IsActiveChanged;
-		public event EventHandler IsActiveChanged
-		{
-			add
-			{
-				if (_IsActiveChanged == null)
-				{
-					/*
-					foreach (var window in Application.Instance.Windows)
-					{
-						new WindowActiveHelper(window.ToGtk());
-					}*/
-
-					/* Does not work... Windows array is always empty.
-					Control.WindowAdded += (o, args) => new WindowActiveHelper(args.Window);
-					for (int i = 0; i < Control.Windows.Length; i++)
-					{
-						var window = Control.Windows[i];
-						new WindowActiveHelper(window);
-					}*/
-				}
-				_IsActiveChanged += value;
-
-			}
-			remove
-			{
-				_IsActiveChanged -= value;
-			}
-		}
-
 		class WindowActiveHelper
 		{
 			Gtk.Window _window;
@@ -309,8 +283,6 @@ namespace Eto.GtkSharp.Forms
 			//if (!Platform.IsWindows) Gdk.Threads.Init(); // do this in windows, and it stalls!  ugh
 			MainThreadID = Thread.CurrentThread.ManagedThreadId;
 
-			if (EtoEnvironment.Platform.IsLinux)
-				LinuxNotificationHandler.Init();
 			Callback.OnInitialized(Widget, EventArgs.Empty);
 			if (!attached)
 			{
@@ -344,6 +316,14 @@ namespace Eto.GtkSharp.Forms
 					break;
 				case Eto.Forms.Application.NotificationActivatedEvent:
 					// handled by NotificationHandler
+					break;
+				case Eto.Forms.Application.IsActiveChangedEvent:
+					break;
+				case Eto.Forms.Application.ThemeChangedEvent:
+					// Listen for OS/system theme changes via GtkSettings property notifications
+					var settings = Gtk.Settings.Default;
+					settings.AddNotification("gtk-theme-name", OnSettingsThemeChanged);
+					settings.AddNotification("gtk-application-prefer-dark-theme", OnSettingsThemeChanged);
 					break;
 				default:
 					base.AttachEvent(id);
@@ -386,6 +366,38 @@ namespace Eto.GtkSharp.Forms
 		public Keys CommonModifier { get { return Keys.Control; } }
 
 		public Keys AlternateModifier { get { return Keys.Alt; } }
+
+		Theme _currentTheme;
+		bool _settingTheme;
+
+		void OnSettingsThemeChanged(object o, GLib.NotifyArgs args)
+		{
+			if (_settingTheme)
+				return;
+			Callback.OnThemeChanged(Widget, EventArgs.Empty);
+		}
+
+		public Theme Theme
+		{
+			get => _currentTheme ??= (Platform.Instance.CreateShared<Themes.IHandler>() as ThemesHandler)?.System;
+			set
+			{
+				_currentTheme = value;
+				if (value?.Handler is ThemeHandler handler)
+				{
+					_settingTheme = true;
+					try
+					{
+						handler.SetTheme();
+					}
+					finally
+					{
+						_settingTheme = false;
+					}
+				}
+				Callback.OnThemeChanged(Widget, EventArgs.Empty);
+			}
+		}
 
 		private void RestartInternal()
 		{

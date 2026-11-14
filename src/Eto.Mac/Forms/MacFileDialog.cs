@@ -1,39 +1,3 @@
-using System;
-using Eto.Forms;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 namespace Eto.Mac.Forms
 {
 	interface IMacFileDialog
@@ -53,12 +17,13 @@ namespace Eto.Mac.Forms
 
 		public override bool ShouldEnableUrl(NSSavePanel panel, NSUrl url)
 		{
-			if (Directory.Exists(url.Path))
+			var h = Handler;
+			if (h == null || url == null || Directory.Exists(url.Path))
 				return true;
 
-			// Xamarin.Mac's version of mono has string.TrimStart(char), which is not in the .NET Framework!
-			var extension = Path.GetExtension(url.Path).TrimStart(new[] { '.' });
-			if (Handler.MacFilters == null || Handler.MacFilters.Contains(extension, StringComparer.InvariantCultureIgnoreCase))
+			var extension = Path.GetExtension(url.Path)?.TrimStart(new[] { '.' }) ?? string.Empty;
+			var macFilters = h.MacFilters;
+			if (macFilters == null || macFilters.Contains(extension, StringComparer.InvariantCultureIgnoreCase))
 				return true;
 			return false;
 		}
@@ -70,74 +35,69 @@ namespace Eto.Mac.Forms
      where TWidget: FileDialog
 	{
 		List<string> macfilters;
-		readonly NSPopUpButton fileTypes;
+		readonly DropDown fileTypes;
 
 		protected MacFileDialog()
 		{
-			fileTypes = new NSPopUpButton();
+			fileTypes = new DropDown();
+			fileTypes.SelectedIndexChanged += (sender, e) => OnFileTypeChanged();
 		}
 
-		void Create()
+		internal virtual void Create()
 		{
-			if (Control.AccessoryView != null)
-				return;
-
-			var fileTypeView = new NSView();
-			fileTypeView.AutoresizingMask = NSViewResizingMask.HeightSizable | NSViewResizingMask.WidthSizable;
-			
-			const int padding = 15;
-			
 			if (Widget.Filters.Count > 0)
 			{
-				var label = new NSTextField();
-				label.StringValue = "Format";
-				label.DrawsBackground = false;
-				label.Bordered = false;
-				label.Bezeled = false;
-				label.Editable = false;
-				label.Selectable = false;
-				label.SizeToFit();
-				fileTypeView.AddSubview(label);
+				if (Control.AccessoryView != null)
+					return;
 
-				fileTypes.SizeToFit();
-				fileTypes.Activated += (sender, e) =>
-				{
-					SetCurrentItem();
-					Control.ValidateVisibleColumns();
-					Control.Update();
-				};
-				fileTypeView.AddSubview(fileTypes);
-				fileTypes.SetFrameOrigin(new CGPoint((nfloat)label.Frame.Width + 10, padding));
-	
-				label.SetFrameOrigin(new CGPoint(0, (nfloat)(padding + (fileTypes.Frame.Height - label.Frame.Height) / 2)));
-				
-				fileTypeView.Frame = new CGRect(0, 0, (nfloat)(fileTypes.Frame.Width + label.Frame.Width + 10), (nfloat)(fileTypes.Frame.Height + padding * 2));
-				
-				Control.AccessoryView = fileTypeView;
-				SetCurrentItem();
+				var layout = new TableLayout { Padding = 15, Spacing = new Size(2, 2) };
+				layout.Rows.Add(new TableRow(null, fileTypes, null));
+
+				Control.AccessoryView = layout.ToNative(true);
+
+				SetAllowedFileTypes();
 			}
 			else
 				Control.AccessoryView = null;
 		}
 
+		protected virtual void OnFileTypeChanged()
+		{
+			SetAllowedFileTypes();
+			Control.ValidateVisibleColumns();
+			Control.Update();
+		}
+
+		// Cache the full path so FileName round-trips it; cleared on OK so the chosen path wins.
+		string fileName;
+
+		/// <summary>Whether the dialog was shown since FileName was last set.</summary>
+		internal bool HasShown { get; private set; }
+
 		public virtual string FileName
 		{
-			get
-			{ 
-				return Control.Url.Path;
+			// Before showing, the panel reports its own default (e.g. "Untitled") rather than what was set.
+			get => fileName ?? (HasShown ? Control.Url?.Path : null);
+			set
+			{
+				HasShown = false;
+				var dir = Path.GetDirectoryName(value);
+				if (!string.IsNullOrEmpty(dir) && System.IO.Directory.Exists(dir))
+					Control.DirectoryUrl = new NSUrl(new Uri(dir).AbsoluteUri);
+				fileName = string.IsNullOrEmpty(value) ? null : value;
 			}
-			set { }
 		}
 
 		public Uri Directory
 		{
-			get
-			{
-				return new Uri(Control.DirectoryUrl.AbsoluteString);
-			}
+			// MonoMac's NSUrl conversion dereferences a nil url, so guard before casting.
+			get => Control.DirectoryUrl is NSUrl url ? (Uri)url : null;
 			set
 			{
 				Control.DirectoryUrl = new NSUrl(value.AbsoluteUri);
+				// Last one wins: move a full-path FileName into the new folder so it matches what the dialog shows.
+				if (!string.IsNullOrEmpty(Path.GetDirectoryName(fileName)))
+					fileName = Path.Combine(value.LocalPath, Path.GetFileName(fileName));
 			}
 		}
 
@@ -155,44 +115,46 @@ namespace Eto.Mac.Forms
 			return null;
 		}
 
-		public List<string> MacFilters
-		{
-			get { return macfilters; }
-		}
+		public List<string> MacFilters => macfilters;
 
-		public void SetCurrentItem()
+		internal void SetAllowedFileTypes()
 		{
-			macfilters = Widget.CurrentFilter.Extensions?.Select(r => r.TrimStart('*', '.')).ToList();
-
-			if (macfilters == null || macfilters.Count == 0 || macfilters.Contains(""))
+			var filters = Widget.CurrentFilter?.Extensions?.Select(r => r.TrimStart('*', '.')).ToList();
+			if (filters != null && (filters.Count == 0 || filters.Contains("")))
 			{
-				macfilters = null;
-				// Xamarin.Mac throws exception when setting to null (ugh)
-				Messaging.void_objc_msgSend_IntPtr(Control.Handle, Selector.GetHandle("setAllowedFileTypes:"), IntPtr.Zero);
+				filters = null;
 			}
-			else
-				Control.AllowedFileTypes = macfilters.Distinct().ToArray();
+			
+			if (macfilters == filters)
+				return;
+			macfilters = filters;
+
+			var allowedTypes = GetNativeFileTypes(macfilters);
+
+#if MACOS_NET
+			Control.AllowedContentTypes = allowedTypes?.Distinct().Select(UniformTypeIdentifiers.UTType.CreateFromExtension).ToArray()
+				?? Array.Empty<UniformTypeIdentifiers.UTType>();
+#else
+
+			Control.AllowedFileTypes = allowedTypes?.Distinct().ToArray();
+#endif
 		}
+
+		/// <summary>
+		/// Gets the extensions to restrict the native panel to, which can differ from <see cref="MacFilters"/>
+		/// used by <see cref="SavePanelDelegate"/> to enable/disable files in the list.
+		/// </summary>
+		internal virtual List<string> GetNativeFileTypes(List<string> filters) => filters;
 
 		public int CurrentFilterIndex
 		{
-			get
-			{ 
-				var title = fileTypes.TitleOfSelectedItem;
-				var item = Widget.Filters.FirstOrDefault(r => r.Name == title);
-				if (item == null)
-					return -1;
-				return Widget.Filters.IndexOf(item);
-			}
-			set
-			{ 
-				fileTypes.SelectItem(Widget.Filters[value].Name);
-			}
+			get => fileTypes.SelectedIndex;
+			set => fileTypes.SelectedIndex = value;
 		}
 
 		public bool CheckFileExists
 		{
-			get { return false; }
+			get { return true; }
 			set { }
 		}
 
@@ -201,36 +163,39 @@ namespace Eto.Mac.Forms
 			get { return Control.Message; }
 			set { Control.Message = value ?? string.Empty; }
 		}
-
-		public DialogResult ShowDialog(Window parent)
+		
+		public virtual DialogResult ShowDialog(Window parent)
 		{
+			HasShown = true;
 			//Control.AllowsOtherFileTypes = false;
+			var oldDelegate = Control.Delegate;
 			Control.Delegate = new SavePanelDelegate{ Handler = this };
 			Create();
 
 			int ret = MacModal.Run(Control, parent);
-            
-			return ret == 1 ? DialogResult.Ok : DialogResult.Cancel;
-		}
+			Control.Delegate = oldDelegate;
+			
+			if (ret == 1)
+				fileName = null;
 
-		protected override void Dispose(bool disposing)
-		{
-			//base.Dispose (disposing);
+			return ret == 1 ? DialogResult.Ok : DialogResult.Cancel;
 		}
 
 		public void InsertFilter(int index, FileFilter filter)
 		{
-			fileTypes.InsertItem(filter.Name, index);
+			fileTypes.Items.Insert(index, new ListItem { Text = filter.Name } );
+			if (fileTypes.SelectedIndex == -1)
+				fileTypes.SelectedIndex = index;
 		}
 
 		public void RemoveFilter(int index)
 		{
-			fileTypes.RemoveItem(index);
+			fileTypes.Items.RemoveAt(index);
 		}
 
 		public void ClearFilters()
 		{
-			fileTypes.RemoveAllItems();
+			fileTypes.Items.Clear();
 		}
 	}
 }

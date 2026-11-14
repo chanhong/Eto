@@ -1,12 +1,3 @@
-using System;
-using System.IO;
-using sd = System.Drawing;
-using swf = System.Windows.Forms;
-using Eto.Forms;
-using Eto.Drawing;
-using System.Collections.Generic;
-using System.Diagnostics;
-
 namespace Eto.WinForms.Forms.Controls
 {
 	public class LabelHandler : WindowsControl<LabelHandler.EtoLabel, Label, Label.ICallback>, Label.IHandler
@@ -20,6 +11,10 @@ namespace Eto.WinForms.Forms.Controls
 			sd.SizeF? measuredSizeMax;
 			VerticalAlignment verticalAlign;
 			swf.TextFormatFlags textFormat;
+			// The same flags plus the trimming, used when painting only: measuring with an ellipsis flag
+			// reports the space the label was given instead of the space its text needs.
+			swf.TextFormatFlags drawFormat;
+			TextTrimming textTrimming;
 
 			struct Position
 			{
@@ -44,6 +39,16 @@ namespace Eto.WinForms.Forms.Controls
 					ClearSize();
 					lastWidth = Width;
 					BeginInvoke(new Action(Handler.SizeChanged));
+				}
+			}
+			
+			public new bool UseMnemonic
+			{
+				get => base.UseMnemonic;
+				set
+				{
+					base.UseMnemonic = value;
+					SetStringFormat();
 				}
 			}
 
@@ -73,6 +78,16 @@ namespace Eto.WinForms.Forms.Controls
 				set
 				{
 					wrapMode = value;
+					SetStringFormat();
+				}
+			}
+
+			public TextTrimming Trimming
+			{
+				get { return textTrimming; }
+				set
+				{
+					textTrimming = value;
 					SetStringFormat();
 				}
 			}
@@ -192,10 +207,11 @@ namespace Eto.WinForms.Forms.Controls
 			void SetStringFormat()
 			{
 				textFormat = swf.TextFormatFlags.Default;
+				if (!base.UseMnemonic)
+					textFormat |= swf.TextFormatFlags.NoPrefix;
 				switch (Wrap)
 				{
 					case WrapMode.None:
-						textFormat |= swf.TextFormatFlags.SingleLine;
 						break;
 					case WrapMode.Word:
 						textFormat |= swf.TextFormatFlags.WordBreak;
@@ -228,6 +244,16 @@ namespace Eto.WinForms.Forms.Controls
 						textFormat |= swf.TextFormatFlags.VerticalCenter;
 						break;
 				}
+				drawFormat = textFormat;
+				switch (textTrimming)
+				{
+					case TextTrimming.CharacterEllipsis:
+						drawFormat |= swf.TextFormatFlags.EndEllipsis;
+						break;
+					case TextTrimming.WordEllipsis:
+						drawFormat |= swf.TextFormatFlags.WordEllipsis;
+						break;
+				}
 				ClearSize();
 			}
 
@@ -241,12 +267,12 @@ namespace Eto.WinForms.Forms.Controls
 					{
 						var r = rect;
 						r.Height = position.Size.Height;
-						swf.TextRenderer.DrawText(e.Graphics, position.Text, Font, r, ForeColor, textFormat);
+						swf.TextRenderer.DrawText(e.Graphics, position.Text, Font, r, ForeColor, drawFormat);
 						rect.Y += r.Height;
 					}
 					return;
 				}
-				swf.TextRenderer.DrawText(e.Graphics, Text, Font, rect, ForeColor, textFormat);
+				swf.TextRenderer.DrawText(e.Graphics, Text, Font, rect, ForeColor, drawFormat);
 			}
 		}
 
@@ -300,6 +326,19 @@ namespace Eto.WinForms.Forms.Controls
 			}
 		}
 
+		public TextTrimming Trimming
+		{
+			get { return Control.Trimming; }
+			set
+			{
+				if (value != Control.Trimming)
+				{
+					Control.Trimming = value;
+					Control.Invalidate();
+				}
+			}
+		}
+
 		public VerticalAlignment VerticalAlignment
 		{
 			get { return Control.VerticalAlignment; }
@@ -323,6 +362,18 @@ namespace Eto.WinForms.Forms.Controls
 		{
 			if (Widget != null && Widget.Loaded)
 				SetMinimumSize(true);
+		}
+
+		public bool UseMnemonic
+		{
+			get => Control.UseMnemonic;
+			set => Control.UseMnemonic = value;
+		}
+
+		public bool AlwaysShowMnemonic
+		{
+			get => true; // WinForms always shows mnemonics in the label
+			set { /* not supported */ }
 		}
 	}
 }

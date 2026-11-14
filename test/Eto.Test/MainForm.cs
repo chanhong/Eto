@@ -1,14 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Globalization;
-using Eto.Forms;
-using Eto.Drawing;
-using System.Threading.Tasks;
-using System.Linq;
-using System.Runtime.InteropServices;
-
 namespace Eto.Test
 {
 	public class MainForm : Form
@@ -51,22 +40,26 @@ namespace Eto.Test
 
 			Title = $"Test Application [{Platform.ID}, {bitness}, {runtime}, {platform}]";
 			Style = "main";
-			MinimumSize = new Size(400, 400);
+			MinimumSize = new Size(600, 500);
+			AllowFullScreenToggle = true;
 			topNodes = topNodes ?? TestSections.Get(TestApplication.DefaultTestAssemblies());
 
 			var nodes = topNodes.ToList();
-			if (Platform.IsAndroid)
-				SectionList = new SectionListGridView(nodes);
-			else
+			if (Platform.Supports<TreeGridView>())
 				SectionList = new SectionListTreeGridView(nodes);
+			else if (Platform.Supports<GridView>())
+				SectionList = new SectionListGridView(nodes);
+			else if (Platform.Supports<ListBox>())
+				SectionList = new SectionListListBox(nodes);
 
 			SectionList.SelectedItemChanged += SectionList_SelectedItemChanged;
 
 
-			this.Icon = TestIcons.TestIcon;
+			if (Platform.Supports<Icon>())
+				this.Icon = TestIcons.EtoIcon;
 
 			if (Platform.IsDesktop)
-				ClientSize = new Size(900, 650);
+				ClientSize = new Size(1024, 700);
 			//Opacity = 0.5;
 
 			Content = MainContent();
@@ -333,6 +326,11 @@ namespace Eto.Test
 				ToolBar = new ToolBar();
 
 				ToolBar.Items.Add(about);
+
+				// theme switcher, so themes can be tested against any section without
+				// navigating to the Themes section and back.
+				AddThemeToolItem(ToolBar);
+
 				if (Platform.Supports<CheckToolItem>())
 				{
 					ToolBar.Items.Add(new SeparatorToolItem { Type = SeparatorToolItemType.Divider });
@@ -359,7 +357,73 @@ namespace Eto.Test
 					invisibleButton.Visible = !invisibleButton.Visible;
 					sep.Visible = invisibleButton.Visible;
 				};
+				
+				if (Platform.Supports<DropDownToolItem>())
+				{
+					var dropItem = new DropDownToolItem { Text = "Dropdown", Image = TestIcons.TestImage };
+					dropItem.Items.Add(new SubMenuItem { Text = "Subitem 1", Items = { new ButtonMenuItem { Text = "Nested subitem 1" } } });
+					dropItem.Items.Add(new ButtonMenuItem { Text = "Button 2", Image = TestIcons.TestIcon });
+					dropItem.Items.Add(new CheckMenuItem { Text = "Check 3" });
+					dropItem.Items.Add(new ButtonMenuItem { Text = "Disabled Button", Image = TestIcons.TestIcon, Enabled = false });
+					dropItem.Items.Add(new CheckMenuItem((sender, e) => {
+						dropItem.ShowDropArrow = ((CheckMenuItem)sender).Checked == true;
+					}) { Text = "Toggle ShowDropArrow", Checked = dropItem.ShowDropArrow });
+					ToolBar.Items.Add(LogEvents(dropItem));
+				}
 			}
+		}
+
+		void AddThemeToolItem(ToolBar toolBar)
+		{
+			// requires a drop-down with radio items to show/select the active theme
+			if (!Platform.Supports<DropDownToolItem>() || !Platform.Supports<RadioMenuItem>())
+				return;
+
+			List<Theme> themes;
+			try
+			{
+				themes = Themes.AllThemes.ToList();
+			}
+			catch (Exception ex)
+			{
+				// themes aren't available on every platform
+				Log.Write(this, $"Themes not available: {ex.Message}");
+				return;
+			}
+			if (themes.Count == 0)
+				return;
+
+			var themeDropDown = new DropDownToolItem { Text = "Theme" };
+			var itemsByTheme = new Dictionary<Theme, RadioMenuItem>();
+			RadioMenuItem controller = null;
+			foreach (var theme in themes)
+			{
+				var item = new RadioMenuItem(controller) { Text = $"Theme: {theme.Name}" };
+				controller ??= item;
+				var themeToApply = theme;
+				item.Click += (sender, e) => Application.Instance.Theme = themeToApply;
+				itemsByTheme[theme] = item;
+				themeDropDown.Items.Add(item);
+			}
+
+			void UpdateChecked()
+			{
+				var current = Application.Instance.Theme;
+				foreach (var pair in itemsByTheme)
+				{
+					// setting the matching radio unchecks its siblings via the controller
+					if (pair.Key == current && !pair.Value.Checked)
+						pair.Value.Checked = true;
+				}
+				themeDropDown.Text = current != null ? $"Theme: {current.Name}" : "Theme";
+			}
+
+			UpdateChecked();
+			// keep the toolbar in sync when the theme is changed elsewhere (e.g. Themes section)
+			Application.Instance.ThemeChanged += (sender, e) => UpdateChecked();
+
+			toolBar.Items.Add(new SeparatorToolItem { Type = SeparatorToolItemType.Divider });
+			toolBar.Items.Add(themeDropDown);
 		}
 
 		RadioToolItem LogEvents(RadioToolItem item)
@@ -379,6 +443,11 @@ namespace Eto.Test
 			item.Click += (sender, e) => Log.Write(sender, $"Click: {item.Text}");
 			return item;
 		}
+		DropDownToolItem LogEvents(DropDownToolItem item)
+			{
+			item.Click += (sender, e) => Log.Write(sender, $"Click: {item.Text}");
+			return item;
+			}
 
 		protected override void OnWindowStateChanged(EventArgs e)
 		{

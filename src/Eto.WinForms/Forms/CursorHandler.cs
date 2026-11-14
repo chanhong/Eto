@@ -1,44 +1,67 @@
-using System;
-using swf = System.Windows.Forms;
-using sd = System.Drawing;
-using Eto.Forms;
-using Eto.Drawing;
-using System.IO;
-using System.Runtime.InteropServices;
-
 namespace Eto.WinForms.Forms
 {
 	public class CursorHandler : WidgetHandler<swf.Cursor, Cursor>, Cursor.IHandler
 	{
-		public void Create (CursorType cursor)
+		public void Create(CursorType cursor)
 		{
-			switch (cursor) {
-			case CursorType.Arrow:
-				Control = swf.Cursors.Arrow;
-				break;
-			case CursorType.Crosshair:
-				Control = swf.Cursors.Cross;
-				break;
-			case CursorType.Default:
-				Control = swf.Cursors.Default;
-				break;
-			case CursorType.HorizontalSplit:
-				Control = swf.Cursors.HSplit;
-				break;
-			case CursorType.IBeam:
-				Control = swf.Cursors.IBeam;
-				break;
-			case CursorType.Move:
-				Control = swf.Cursors.SizeAll;
-				break;
-			case CursorType.Pointer:
-				Control = swf.Cursors.Hand;
-				break;
-			case CursorType.VerticalSplit:
-				Control = swf.Cursors.VSplit;
-				break;
-			default:
-				throw new NotSupportedException();
+			switch (cursor)
+			{
+				case CursorType.Arrow:
+					Control = swf.Cursors.Arrow;
+					break;
+				case CursorType.Crosshair:
+					Control = swf.Cursors.Cross;
+					break;
+				case CursorType.Default:
+					Control = swf.Cursors.Default;
+					break;
+				case CursorType.HorizontalSplit:
+					Control = swf.Cursors.HSplit;
+					break;
+				case CursorType.IBeam:
+					Control = swf.Cursors.IBeam;
+					break;
+				case CursorType.Move:
+					Control = swf.Cursors.SizeAll;
+					break;
+				case CursorType.Pointer:
+					Control = swf.Cursors.Hand;
+					break;
+				case CursorType.VerticalSplit:
+					Control = swf.Cursors.VSplit;
+					break;
+				case CursorType.SizeAll:
+					Control = swf.Cursors.SizeAll;
+					break;
+				case CursorType.SizeLeft:
+					Control = swf.Cursors.SizeWE;
+					break;
+				case CursorType.SizeTop:
+					Control = swf.Cursors.SizeNS;
+					break;
+				case CursorType.SizeRight:
+					Control = swf.Cursors.SizeWE;
+					break;
+				case CursorType.SizeBottom:
+					Control = swf.Cursors.SizeNS;
+					break;
+				case CursorType.SizeTopLeft:
+					Control = swf.Cursors.SizeNWSE;
+					break;
+				case CursorType.SizeTopRight:
+					Control = swf.Cursors.SizeNESW;
+					break;
+				case CursorType.SizeBottomLeft:
+					Control = swf.Cursors.SizeNESW;
+					break;
+				case CursorType.SizeBottomRight:
+					Control = swf.Cursors.SizeNWSE;
+					break;
+				case CursorType.NotAllowed:
+					Control = swf.Cursors.No;
+					break;
+				default:
+					throw new NotSupportedException();
 			}
 		}
 
@@ -98,7 +121,7 @@ namespace Eto.WinForms.Forms
 		{
 			// using Cursor constructor doesn't support 32-bit cursors
 			// so we save to a temp file and use LoadCursorFromFile.
-			var tmp = Path.GetTempFileName();
+			var tmp = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()); //Path.GetTempFileName();
 			try
 			{
 				using (var tmpStream = File.Create(tmp))

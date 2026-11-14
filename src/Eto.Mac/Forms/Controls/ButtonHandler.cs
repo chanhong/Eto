@@ -1,39 +1,5 @@
 //#define BUTTON_DEBUG
 
-using System;
-using Eto.Drawing;
-using Eto.Forms;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 namespace Eto.Mac.Forms.Controls
 {
 	public class ButtonHandler : ButtonHandler<Button, Button.ICallback>, Button.IHandler
@@ -48,6 +14,8 @@ namespace Eto.Mac.Forms.Controls
 		protected override NSButtonType DefaultButtonType => NSButtonType.MomentaryPushIn;
 
 		protected override Size DefaultMinimumSize => new Size(MinimumWidth, originalSize.Height);
+		
+		public static Size DefaultButtonSize => originalSize;
 
 		static ButtonHandler()
 		{
@@ -59,20 +27,6 @@ namespace Eto.Mac.Forms.Controls
 
 	public class EtoButtonCell : NSButtonCell
 	{
-		ColorizeView colorize;
-		public Color? Color
-		{
-			get => colorize?.Color;
-			set => ColorizeView.Create(ref colorize, value);
-		}
-
-		public override void DrawBezelWithFrame(CGRect frame, NSView controlView)
-		{
-			colorize?.Begin(frame, controlView);
-			base.DrawBezelWithFrame(frame, controlView);
-			colorize?.End();
-		}
-
 		public EtoButtonCell()
 		{
 			ImageScale = NSImageScale.ProportionallyDown;
@@ -205,19 +159,12 @@ namespace Eto.Mac.Forms.Controls
 			}
 		}
 
-		public override Color BackgroundColor
+		protected override Color DefaultBackgroundColor => Control.BezelColor?.ToEto() ?? Control.Cell.BackgroundColor.ToEto();
+		
+		protected override void SetBackgroundColor(Color? color)
 		{
-			get
-			{
-				var cell = (EtoButtonCell)Control.Cell;
-				return cell.Color ?? Colors.Transparent;
-			}
-			set
-			{
-				var cell = (EtoButtonCell)Control.Cell;
-				cell.Color = value.A > 0 ? (Color?)value : null;
-				Control.SetNeedsDisplay();
-			}
+			Control.BezelColor = color?.ToNSUI();
+			Control.NeedsDisplay = true;
 		}
 
 		public Image Image
@@ -358,6 +305,19 @@ namespace Eto.Mac.Forms.Controls
 				if (Widget.Properties.TrySet(ButtonHandler.ImagePosition_Key, value))
 				{
 					SetImagePosition();
+					InvalidateMeasure();
+				}
+			}
+		}
+
+		public bool ImageNextToText
+		{
+			get => Control.ImageHugsTitle;
+			set
+			{
+				if (Control.ImageHugsTitle != value)
+				{
+					Control.ImageHugsTitle = value;
 					InvalidateMeasure();
 				}
 			}

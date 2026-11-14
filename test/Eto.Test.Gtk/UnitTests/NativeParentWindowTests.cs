@@ -1,8 +1,5 @@
-using System;
 using Eto.Test.UnitTests;
 using NUnit.Framework;
-using Eto.Forms;
-using System.Threading;
 using g = Gtk;
 
 
@@ -23,8 +20,8 @@ namespace Eto.Test.Gtk.UnitTests
 				window.Child = panel.ToNative(true);
 
 				var parentWindow = panel.ParentWindow;
-				Assert.IsNotNull(parentWindow, "#1");
-				Assert.AreSame(window, parentWindow.ControlObject, "#2");
+				Assert.That(parentWindow, Is.Not.Null, "#1");
+				Assert.That(window, Is.SameAs(parentWindow.ControlObject), "#2");
 			});
 		}
 
@@ -91,7 +88,7 @@ namespace Eto.Test.Gtk.UnitTests
 				nswindow.MakeKeyAndOrderFront(nswindow);
 			});
 			ev.WaitOne();
-			Assert.IsTrue(passed);
+			Assert.That(passed, Is.True);
 		}*/
 	}
 }

@@ -1,7 +1,4 @@
-using System;
 using UIKit;
-using Eto.Forms;
-
 namespace Eto.iOS.Forms.Controls
 {
 	public class WebViewHandler : IosView<UIWebView, WebView, WebView.ICallback>, WebView.IHandler
@@ -62,6 +59,14 @@ namespace Eto.iOS.Forms.Controls
 
 		public string DocumentTitle {
 			get { return null; }
+		}
+
+		public bool SupportsResourceHandlers => false;
+
+		public Uri AddResourceHandler(string host, Func<WebViewResourceRequest, WebViewResourceResponse> handler) => null;
+
+		public void RemoveResourceHandler(string host)
+		{
 		}
 
 		public bool BrowserContextMenuEnabled

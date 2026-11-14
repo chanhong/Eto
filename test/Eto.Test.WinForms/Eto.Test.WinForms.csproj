@@ -1,24 +1,35 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform(Windows))">net5.0-windows;net472</TargetFrameworks>
-    <TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform(Windows))">net472</TargetFrameworks>
-  </PropertyGroup>
-
-  <PropertyGroup>
+    <TargetFrameworks>net10.0-windows;net48</TargetFrameworks>
     <OutputType>WinExe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <ApplicationIcon>..\Eto.Test\Images\TestIcon.ico</ApplicationIcon>
-    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+    <ApplicationIcon>..\Eto.Test\Images\EtoIcon.ico</ApplicationIcon>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
   <PropertyGroup>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- <ApplicationManifest>app.manifest</ApplicationManifest> -->
+    <ApplicationVisualStyles>true</ApplicationVisualStyles>
+    <ApplicationUseCompatibleTextRendering>false</ApplicationUseCompatibleTextRendering>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <!-- <ApplicationDefaultFont>Microsoft Sans Serif, 8.25pt</ApplicationDefaultFont> -->
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(TargetFramework)'=='net472'">
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <WindowsPackageFormats>msi;setup;msix</WindowsPackageFormats>
+    <WindowsPackageRuntimeIdentifiers>win-x64;win-arm64</WindowsPackageRuntimeIdentifiers>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <Using Include="System.Windows.Forms" Alias="swf" />
+    <Using Include="System.Drawing" Alias="sd" />
+    <Using Include="System.Drawing.Imaging" Alias="sdi" />
+    <Using Include="System.Drawing.Drawing2D" Alias="sd2" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)'=='net48'">
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -43,17 +54,17 @@
   </ItemGroup>
   
   <ItemGroup>
-    <None Include="app.config" />
-    <None Include="app.manifest" />
+    <!-- <None Include="app.config" />
+    <None Include="app.manifest" /> -->
   </ItemGroup>
   
   <ItemGroup>
-    <PackageReference Include="NUnit" Version="3.12.0" />
-    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0" PrivateAssets="all" />
-  	<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.705.50" />
+    <PackageReference Include="NUnit" Version="4.6.1" />
+  	<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2957.106" />
   </ItemGroup>
   <ItemGroup>
     <Service Include="{82A7F48D-3B50-4B1E-B82E-3ADA8210C358}" />
   </ItemGroup>
 
+  <Import Project="..\..\src\Shared\build\Windows.targets" />
 </Project>

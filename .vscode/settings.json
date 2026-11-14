@@ -1,5 +1,4 @@
 {
-	"omnisharp.defaultLaunchSolution": "Eto.Core.sln",
     "editor.insertSpaces": false,
 	"editor.detectIndentation": false,
 	"files.exclude": {
@@ -8,11 +7,14 @@
 	},
 	"var": {
 		"configuration" : "Debug",
-		"buildProperties" : "/v:Minimal /p:GenerateFullPaths=True /consoleLoggerParameters:NoSummary"
+		"buildProperties" : "/v:Minimal /p:GenerateFullPaths=True /consoleloggerparameters:'ForceNoAlign;NoSummary'"
 	},
 	"vssolution.altSolutionFolders": [
 		"src",
 		"samples"
-	]
+	],
+	"dotnet.defaultSolution": "src/Eto.slnx",
+	"debug.allowBreakpointsEverywhere": true,
+	"dotnet.server.sourceGeneratorExecution": "Automatic"
 
 }

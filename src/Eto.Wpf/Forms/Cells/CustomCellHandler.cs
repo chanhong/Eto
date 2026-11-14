@@ -1,15 +1,5 @@
-using Eto.Forms;
-using swc = System.Windows.Controls;
-using sw = System.Windows;
-using swd = System.Windows.Data;
-using swm = System.Windows.Media;
-using swi = System.Windows.Input;
 using Eto.Wpf.Drawing;
-using Eto.Drawing;
-using System.Collections.Generic;
-using System;
 using System.Windows;
-using System.Windows.Input;
 using Eto.Wpf.Forms.Controls;
 
 namespace Eto.Wpf.Forms.Cells
@@ -44,8 +34,11 @@ namespace Eto.Wpf.Forms.Cells
 				var grid = cell.GetVisualParent<swc.DataGrid>();
 				var selected = cell.IsSelected;
 				IsSelected = selected;
-				var focused = grid?.IsKeyboardFocusWithin == true;
-				CellTextColor = selected ? Eto.Drawing.SystemColors.HighlightText : Eto.Drawing.SystemColors.ControlText;
+				var focused = grid?.IsKeyboardFocusWithin != false;
+				CellTextColor = selected && focused 
+					? (cell.GetResourceColor("TextOnAccentFillColorPrimaryBrush", sw.SystemColors.HighlightTextColorKey, sw.SystemColors.HighlightTextBrushKey) ?? Eto.Drawing.SystemColors.HighlightText) 
+					: selected ? (cell.GetResourceColor("TextOnAccentFillColorPrimaryBrush", sw.SystemColors.ControlTextColorKey, sw.SystemColors.ControlTextBrushKey) ?? Eto.Drawing.SystemColors.ControlText)
+					: (cell.GetResourceColor("TextFillColorPrimaryBrush", sw.SystemColors.ControlTextColorKey, sw.SystemColors.ControlTextBrushKey) ?? Eto.Drawing.SystemColors.ControlText);
 			}
 			public void SetRow(sw.FrameworkElement element)
 			{
@@ -127,10 +120,13 @@ namespace Eto.Wpf.Forms.Cells
 				return control;
 			}
 
-			static void HandlePreviewMouseDown(object sender, MouseButtonEventArgs e)
+			static void HandlePreviewMouseDown(object sender, swi.MouseButtonEventArgs e)
 			{
 				var ctl = sender as sw.FrameworkElement;
 				var cell = ctl?.GetVisualParent<swc.DataGridCell>();
+				if (cell == null)
+					return;
+
 				if (!cell.IsKeyboardFocusWithin && !cell.Column.IsReadOnly)
 				{
 					cell.IsEditing = true;
@@ -224,10 +220,12 @@ namespace Eto.Wpf.Forms.Cells
 					}
 					else
 					{
+						// we need new args here, original were associated with a different control
+						if (child != null)
+							args = CreateEditArgs(handler, cell, wpfctl);
 						child = handler.Callback.OnCreateCell(handler.Widget, args);
 						wpfctl.Control = child;
-						// create args for this new control
-						args = GetEditArgs(handler, cell, wpfctl);
+						child?.Properties.Set(CellEventArgs_Key, args);
 					}
 
 					if (!ReferenceEquals(args, originalArgs))
@@ -349,6 +347,12 @@ namespace Eto.Wpf.Forms.Cells
 				return obj;
 			}
 
+			static WpfCellEventArgs CreateEditArgs(CustomCellHandler handler, swc.DataGridCell cell, FrameworkElement editingElement)
+			{
+				var wpfctl = editingElement as EtoBorder ?? GetControl<EtoBorder>(cell);
+				return new WpfCellEventArgs(handler.ContainerHandler?.Grid, handler.Widget, -1, cell.Column, wpfctl.IsLoaded ? wpfctl.DataContext : null, CellStates.None, null);
+			}
+
 			static WpfCellEventArgs GetEditArgs(CustomCellHandler handler, swc.DataGridCell cell, FrameworkElement editingElement)
 			{
 				if (handler == null)
@@ -358,7 +362,7 @@ namespace Eto.Wpf.Forms.Cells
 				var args = etoctl?.Properties.Get<WpfCellEventArgs>(CellEventArgs_Key);
 				if (args == null && wpfctl != null)
 				{
-					args = new WpfCellEventArgs(handler.ContainerHandler?.Grid, handler.Widget, -1, cell.Column, wpfctl.IsLoaded ? wpfctl.DataContext : null, CellStates.None, etoctl);
+					args = CreateEditArgs(handler, cell, editingElement);
 					etoctl?.Properties.Set(CellEventArgs_Key, args);
 				}
 				args.Handled = false;

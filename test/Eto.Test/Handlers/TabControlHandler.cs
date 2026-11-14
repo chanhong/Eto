@@ -1,9 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using Eto.Forms;
-using Eto.Drawing;
-
 namespace Eto.Test.Handlers
 {
 	public class TabControlHandler : ThemedContainerHandler<Container, TabControl, TabControl.ICallback>, TabControl.IHandler
@@ -36,7 +30,7 @@ namespace Eto.Test.Handlers
 				},
 			};
 
-			ContentPanel = new Panel { BackgroundColor = Colors.White };
+			ContentPanel = new Panel { BackgroundColor = SystemColors.ControlBackground };
 			var layout = new DynamicLayout { Padding = Padding.Empty, Spacing = Size.Empty };
 			layout.BeginHorizontal();
 			layout.Add(tabs);

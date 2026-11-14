@@ -1,7 +1,4 @@
-﻿using Eto.Drawing;
-using Eto.Forms;
-
-namespace Eto.Test.Handlers
+﻿namespace Eto.Test.Handlers
 {
 	class TabPageHandler : ThemedContainerHandler<Panel, TabPage, TabPage.ICallback>, TabPage.IHandler
     {
@@ -26,12 +23,6 @@ namespace Eto.Test.Handlers
 		{
 			get { return Tab.Text; }
 			set { Tab.Text = value; }
-		}
-
-		public ContextMenu ContextMenu
-		{
-			get { return Control.ContextMenu; }
-			set { Control.ContextMenu = value; } // TODO
 		}
 
 		public Image Image

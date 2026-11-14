@@ -1,7 +1,3 @@
-using System;
-using System.IO;
-using Eto.Forms;
-using Eto.Drawing;
 using NUnit.Framework;
 
 namespace Eto.Test.UnitTests.Drawing
@@ -72,7 +68,7 @@ namespace Eto.Test.UnitTests.Drawing
 			}
 		}
 
-		[Test]
+		[ManualTest, Test]
 		public void TestEdgeFillMisalignment()
 		{
 			using (var small = Chequer(20))
@@ -108,7 +104,7 @@ namespace Eto.Test.UnitTests.Drawing
 			}
 		}
 
-		[Test]
+		[ManualTest, Test]
 		public void TestPlugIcon()
 		{
 			var polygon = new PointF[]

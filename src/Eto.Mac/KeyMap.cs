@@ -1,45 +1,13 @@
-﻿using System.Collections.Generic;
-using Eto.Forms;
-using System.Diagnostics;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
-namespace Eto.Mac
+﻿namespace Eto.Mac
 {
 	public static class KeyMap
 	{
 		static Dictionary<ushort, Keys> _map;
 		static Dictionary<Keys, string> _inverseMap;
+		static Dictionary<string, Keys> _keyEquivalentMap;
 		static Dictionary<ushort, Keys> Map => _map ?? (_map = GetMap());
 		static Dictionary<Keys, string> InverseMap = _inverseMap ?? (_inverseMap = GetInverseMap());
+		static Dictionary<string, Keys> KeyEquivalentMap => _keyEquivalentMap ?? (_keyEquivalentMap = GetKeyEquivalentMap());
 
 		public static Keys MapKey(ushort key, NSEventModifierMask modifiers)
 		{
@@ -71,7 +39,11 @@ namespace Eto.Mac
 
 		public static Keys Convert(string keyEquivalent, NSEventModifierMask modifier)
 		{
-			return Keys.None;
+			var key = Keys.None;
+			// key equivalents are lower case, but e.g. shift+A comes through as "A", so match case insensitively
+			if (!string.IsNullOrEmpty(keyEquivalent))
+				KeyEquivalentMap.TryGetValue(keyEquivalent, out key);
+			return key | modifier.ToEto();
 		}
 
 		public static string KeyEquivalent(Keys key)
@@ -172,11 +144,7 @@ namespace Eto.Mac
 			keymap.Add(64, Keys.F17);
 			keymap.Add(79, Keys.F18);
 			keymap.Add(80, Keys.F19);
-			// keymap.Add(80, Keys.F20);
-			// keymap.Add(80, Keys.F21);
-			// keymap.Add(80, Keys.F22);
-			// keymap.Add(80, Keys.F23);
-			// keymap.Add(80, Keys.F24);
+			keymap.Add(90, Keys.F20);
 			keymap.Add(18, Keys.D1);
 			keymap.Add(19, Keys.D2);
 			keymap.Add(20, Keys.D3);
@@ -280,6 +248,9 @@ namespace Eto.Mac
 			inverse.Add(Keys.Grave, "`");
 			inverse.Add(Keys.Minus, "-");
 			inverse.Add(Keys.Semicolon, ";");
+			inverse.Add(Keys.Quote, "'");
+			inverse.Add(Keys.LeftBracket, "[");
+			inverse.Add(Keys.RightBracket, "]");
 			inverse.Add(Keys.Up, "\xF700");
 			inverse.Add(Keys.Down, "\xF701");
 			inverse.Add(Keys.Left, "\xF702");
@@ -312,8 +283,31 @@ namespace Eto.Mac
 			inverse.Add(Keys.F10, "\xF70D");
 			inverse.Add(Keys.F11, "\xF70E");
 			inverse.Add(Keys.F12, "\xF70F");
+			inverse.Add(Keys.F13, "\xF710");
+			inverse.Add(Keys.F14, "\xF711");
+			inverse.Add(Keys.F15, "\xF712");
+			inverse.Add(Keys.F16, "\xF713");
+			inverse.Add(Keys.F17, "\xF714");
+			inverse.Add(Keys.F18, "\xF715");
+			inverse.Add(Keys.F19, "\xF716");
+			inverse.Add(Keys.F20, "\xF717");
+			inverse.Add(Keys.F21, "\xF718");
+			inverse.Add(Keys.F22, "\xF719");
+			inverse.Add(Keys.F23, "\xF71A");
+			inverse.Add(Keys.F24, "\xF71B");
 			return inverse;
+		}
+
+		static Dictionary<string, Keys> GetKeyEquivalentMap()
+		{
+			var map = new Dictionary<string, Keys>(InverseMap.Count, StringComparer.OrdinalIgnoreCase);
+			foreach (var pair in InverseMap)
+			{
+				// first entry wins, to match the previous FirstOrDefault behaviour
+				if (!map.ContainsKey(pair.Value))
+					map.Add(pair.Value, pair.Key);
+			}
+			return map;
 		}
 	}
 }
-

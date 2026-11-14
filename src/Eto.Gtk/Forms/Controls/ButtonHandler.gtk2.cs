@@ -1,8 +1,4 @@
 #if GTK2
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-
 namespace Eto.GtkSharp.Forms.Controls
 {
 	/// <summary>
@@ -208,6 +204,13 @@ namespace Eto.GtkSharp.Forms.Controls
 				if (Widget.Properties.TrySet(ButtonHandler.ImagePosition_Key, value))
 					SetImagePosition();
 			}
+		}
+
+		public bool ImageNextToText
+		{
+			// GTK2 can't center the image and label as a group, the image is always at the edge of the button
+			get { return Widget.Properties.Get<bool>(ButtonHandler.ImageNextToText_Key); }
+			set { Widget.Properties.Set(ButtonHandler.ImageNextToText_Key, value); }
 		}
 
 		public Color TextColor

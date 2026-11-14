@@ -1,9 +1,4 @@
-using swf = System.Windows.Forms;
-using sd = System.Drawing;
-using Eto.Forms;
 using Eto.WinForms.Forms.Cells;
-using System;
-using System.Diagnostics;
 using System.Windows.Forms;
 
 namespace Eto.WinForms.Forms.Controls
@@ -28,7 +23,11 @@ namespace Eto.WinForms.Forms.Controls
 
 		public GridColumnHandler()
 		{
-			Control = new EtoDataGridViewColumn { Handler = this };
+			Control = new EtoDataGridViewColumn
+			{
+				Handler = this,
+				AutoSizeMode = swf.DataGridViewAutoSizeColumnMode.DisplayedCells
+			};
 			DataCell = new TextBoxCell();
 			Editable = false;
 			Resizable = true;
@@ -72,11 +71,11 @@ namespace Eto.WinForms.Forms.Controls
 
 		public int Width
 		{
-			get { return Control.Width; }
+			get => (int)(Control.Width / Win32.SystemDpi);
 			set
 			{
 				AutoSize = value == -1;
-				Control.Width = value;
+				Control.Width = (int)(value * Win32.SystemDpi);
 			}
 		}
 
@@ -140,8 +139,11 @@ namespace Eto.WinForms.Forms.Controls
 			get => Control.HeaderCell.Style.Alignment.ToEtoTextAlignment();
 			set => Control.HeaderCell.Style.Alignment = value.ToSWFGridViewContentAlignment();
 		}
-		public int MinWidth { get => Control.MinimumWidth; set => Control.MinimumWidth = value; }
-
+		public int MinWidth
+		{
+			get => (int)(Control.MinimumWidth / Win32.SystemDpi);
+			set => Control.MinimumWidth = (int)(value * Win32.SystemDpi);
+		}
 		int maxWidth = int.MaxValue;
 		public int MaxWidth
 		{
@@ -153,11 +155,37 @@ namespace Eto.WinForms.Forms.Controls
 				{
 					Control.DataGridView?.AutoResizeColumn(Control.Index);
 				}
-				else if (Control.Width > maxWidth)
+				else if (Control.Width > maxWidth * Win32.SystemDpi)
 				{
-					Control.Width = maxWidth;
+					Control.Width = (int)(maxWidth * Win32.SystemDpi);
 				}
 
+			}
+		}
+
+		public int DisplayIndex
+		{
+			get => Control.DisplayIndex;
+			set => Control.DisplayIndex = value;
+		}
+
+		public string HeaderToolTip
+		{
+			get => Control.ToolTipText;
+			set => Control.ToolTipText = value;
+		}
+
+		static readonly object CellToolTipBinding_Key = new object();
+
+		public IIndirectBinding<string> CellToolTipBinding
+		{
+			get => Widget.Properties.Get<IIndirectBinding<string>>(CellToolTipBinding_Key);
+			set
+			{
+				if (Widget.Properties.TrySet(CellToolTipBinding_Key, value))
+				{
+					GridHandler?.HandleEvent(GridView.CellFormattingEvent);
+				}
 			}
 		}
 
@@ -183,6 +211,8 @@ namespace Eto.WinForms.Forms.Controls
 		public virtual void Setup(IGridHandler gridHandler)
 		{
 			GridHandler = gridHandler;
+			if (CellToolTipBinding != null)
+				GridHandler?.HandleEvent(GridView.CellFormattingEvent);
 		}
 
 		public void Paint(sd.Graphics graphics, sd.Rectangle clipBounds, sd.Rectangle cellBounds, int rowIndex, swf.DataGridViewElementStates cellState, object value, object formattedValue, string errorText, swf.DataGridViewCellStyle cellStyle, swf.DataGridViewAdvancedBorderStyle advancedBorderStyle, ref swf.DataGridViewPaintParts paintParts)
@@ -199,6 +229,11 @@ namespace Eto.WinForms.Forms.Controls
 		public bool MouseClick(swf.MouseEventArgs e, int rowIndex)
 		{
 			return GridHandler != null && GridHandler.CellMouseClick(this, e, rowIndex);
+		}
+
+		internal void UpdateAutoSize(bool value)
+		{
+			Widget.Properties.Set(AutoSize_Key, value, true);
 		}
 	}
 }

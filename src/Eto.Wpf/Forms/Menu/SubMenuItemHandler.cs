@@ -1,10 +1,4 @@
-using Eto.Forms;
-using swc = System.Windows.Controls;
-using swm = System.Windows.Media;
-using swi = System.Windows.Input;
 using System.Windows;
-using System;
-
 namespace Eto.Wpf.Forms.Menu
 {
 	public class SubMenuItemHandler : MenuItemHandler<swc.MenuItem, SubMenuItem, SubMenuItem.ICallback>, SubMenuItem.IHandler
@@ -16,6 +10,11 @@ namespace Eto.Wpf.Forms.Menu
 
 			hiddenItem = new swc.MenuItem();
 			Control.Items.Add(hiddenItem);
+		}
+
+		public SubMenuItemHandler(swc.MenuItem mi)
+		{
+			Control = mi;
 		}
 
 		public override void AttachEvent(string id)
@@ -46,12 +45,14 @@ namespace Eto.Wpf.Forms.Menu
 
 		private void Control_SubmenuClosed(object sender, RoutedEventArgs e)
 		{
-			Callback.OnClosed(Widget, EventArgs.Empty);
+			if (e.OriginalSource == Control)
+				Callback.OnClosed(Widget, EventArgs.Empty);
 		}
 
 		protected override void HandleContextMenuOpening(object sender, RoutedEventArgs e)
 		{
-			Callback.OnOpening(Widget, EventArgs.Empty);
+			if (e.OriginalSource == Control)
+				Callback.OnOpening(Widget, EventArgs.Empty);
 			base.HandleContextMenuOpening(sender, e);
 		}
 

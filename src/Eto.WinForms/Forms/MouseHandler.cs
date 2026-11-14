@@ -1,7 +1,3 @@
-using Eto.Drawing;
-using Eto.Forms;
-using swf = System.Windows.Forms;
-
 namespace Eto.WinForms.Forms
 {
 	public class MouseHandler : Mouse.IHandler
@@ -18,8 +14,8 @@ namespace Eto.WinForms.Forms
 
 		public PointF Position
 		{
-			get { return swf.Cursor.Position.ToEto(); }
-			set { swf.Cursor.Position = value.ToSDPoint(); }
+			get => ((PointF)swf.Cursor.Position.ToEto()) / Win32.SystemDpi;
+			set => swf.Cursor.Position = (value * Win32.SystemDpi).ToSDPoint();
 		}
 
 		public MouseButtons Buttons

@@ -1,12 +1,6 @@
-using Eto.Forms;
-using System.Collections.Generic;
 using Eto.Test.Sections.Controls;
 using Eto.Test.Sections.Drawing;
 using Eto.Test.Sections;
-using System.Linq;
-using System;
-using System.Reflection;
-
 namespace Eto.Test
 {
 	[System.AttributeUsage(System.AttributeTargets.Class, Inherited = false, AllowMultiple = true)]
@@ -41,11 +35,7 @@ namespace Eto.Test
 			{
 				foreach (var type in asm.ExportedTypes)
 				{
-					#if PCL
-					var section = type.GetTypeInfo().GetCustomAttribute<SectionAttribute>(false);
-					#else
 					var section = type.GetCustomAttribute<SectionAttribute>(false);
-					#endif
 					if (section != null)
 					{
 						if (section.Requires != null && !Platform.Instance.Supports(section.Requires))

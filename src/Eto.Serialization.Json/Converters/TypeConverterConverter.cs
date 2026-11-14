@@ -1,8 +1,4 @@
-using System;
 using Newtonsoft.Json;
-using System.Reflection;
-using System.Collections.Generic;
-using sc = System.ComponentModel;
 using Newtonsoft.Json.Linq;
 
 namespace Eto.Serialization.Json.Converters
@@ -23,6 +19,10 @@ namespace Eto.Serialization.Json.Converters
 			if (reader.ValueType == null)
 			{
 				var obj = JObject.Load(reader);
+				// only property values can wait for an object later in the file
+				var reference = ReferenceInfo.GetRef(obj);
+				if (reference != null)
+					return NameScope.Get(serializer).ResolveNow(reference, reader);
 				Type type = null;
 				var typeToken = obj["$type"];
 				if (typeToken != null)
@@ -36,6 +36,8 @@ namespace Eto.Serialization.Json.Converters
 						typeName = typeName.Substring(0, assemblyIndex);
 					}
 					type = serializer.SerializationBinder.BindToType(assemblyName, typeName);
+					if (type == null)
+						throw new JsonSerializationException($"Could not find type '{typeToken.Value<string>()}'. Add the assembly name, e.g. \"My.Namespace.MyType, MyAssembly\", or set NamespaceManager.LocalAssembly.");
 				}
 				else
 					type = objectType;

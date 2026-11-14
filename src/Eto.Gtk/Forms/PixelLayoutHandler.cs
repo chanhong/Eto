@@ -1,9 +1,5 @@
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.GtkSharp.Forms.Controls;
 using Gtk;
-using System;
-
 namespace Eto.GtkSharp.Forms
 {
 
@@ -15,8 +11,12 @@ namespace Eto.GtkSharp.Forms
 		}
 
 #if GTK3
-		class EtoVBox : Gtk.VBox
+		class EtoVBox : Gtk.Box
 		{
+			public EtoVBox() : base(Gtk.Orientation.Vertical, 0)
+			{
+			}
+			
 			protected override void OnAdjustSizeRequest(Gtk.Orientation orientation, out int minimum_size, out int natural_size)
 			{
 				base.OnAdjustSizeRequest(orientation, out minimum_size, out natural_size);
@@ -45,6 +45,18 @@ namespace Eto.GtkSharp.Forms
 			Control.Put(widget, x, y);
 			ctl.CurrentLocation = new Point(x, y);
 			InvalidateMeasure();
+		}
+		public override void InvalidateMeasure()
+		{
+			base.InvalidateMeasure();
+#if GTKCORE
+			if (Widget.Loaded)
+			{
+				// same as Control.ResizeChildren(), but non-obsolete.
+				Control.GetAllocatedSize(out var allocation, out var baseline);
+				Control.SizeAllocateWithBaseline(allocation, baseline);
+			}
+#endif
 		}
 
 		public void Move(Control child, int x, int y)

@@ -1,30 +1,12 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-#if WINRT
-using sw = Windows.UI.Xaml;
-using swc = Windows.UI.Xaml.Controls;
-using wf = Windows.Foundation;
-
-using WpfLabel = Windows.UI.Xaml.Controls.TextBlock;
-using EtoImage = Windows.UI.Xaml.Controls.Image;
-
-namespace Eto.WinRT.Forms.Controls
-#else
-using sw = System.Windows;
-using swc = System.Windows.Controls;
-using wf = System.Windows;
-
-using WpfLabel = System.Windows.Controls.Label;
+#nullable enable
 
 namespace Eto.Wpf.Forms.Controls
-#endif
 {
 	public class EtoButton : swc.Button, IEtoWpfControl
 	{
-		public IWpfFrameworkElement Handler { get; set; }
+		public IWpfFrameworkElement? Handler { get; set; }
 
-		protected override wf.Size MeasureOverride(wf.Size constraint)
+		protected override sw.Size MeasureOverride(sw.Size constraint)
 		{
 			return Handler?.MeasureOverride(constraint, base.MeasureOverride) ?? base.MeasureOverride(constraint);
 		}
@@ -48,13 +30,18 @@ namespace Eto.Wpf.Forms.Controls
 	/// <copyright>(c) 2012-2019 by Curtis Wensley</copyright>
 	/// <license type="BSD-3">See LICENSE for full terms</license>
 	public class ButtonHandler<TControl, TWidget, TCallback> : WpfControl<TControl, TWidget, TCallback>, Button.IHandler
-		where TControl: swc.Primitives.ButtonBase
-		where TWidget: Button
-		where TCallback: Button.ICallback
+		where TControl : swc.Primitives.ButtonBase
+		where TWidget : Button
+		where TCallback : Button.ICallback
 	{
-		public swc.Image ImagePart { get; private set; }
+		EtoAccessLabel? _labelPart;
 
-		public WpfLabel LabelPart { get; private set; }
+		public swc.Image? ImagePart { get; private set; }
+
+		public EtoAccessLabel LabelPart => _labelPart ??= new EtoAccessLabel
+		{
+			TextAlignment = sw.TextAlignment.Center
+		};
 
 		/// <summary>
 		/// Gets or sets the spacing between the image and the label when both are present
@@ -71,77 +58,106 @@ namespace Eto.Wpf.Forms.Controls
 			}
 		}
 
-		protected override wf.Size DefaultSize => MinimumSize.ToWpf();
+		protected override sw.Size DefaultSize => MinimumSize.ToWpf();
 
 		protected virtual Size GetDefaultMinimumSize() => Size.Empty;
 
 		protected override void Initialize()
 		{
+			Control.HorizontalAlignment = sw.HorizontalAlignment.Stretch;
+			Control.VerticalContentAlignment = sw.VerticalAlignment.Stretch;
 			Control.Click += (sender, e) => Callback.OnClick(Widget, EventArgs.Empty);
-			Control.Padding = new sw.Thickness(2);
-			LabelPart = new WpfLabel
-			{
-				IsHitTestVisible = false,
-				VerticalAlignment = sw.VerticalAlignment.Center,
-				HorizontalAlignment = sw.HorizontalAlignment.Center,
-				Padding = new sw.Thickness(0),
-				Visibility = sw.Visibility.Collapsed
-			};
-			swc.Grid.SetColumn(LabelPart, 1);
-			swc.Grid.SetRow(LabelPart, 1);
-			ImagePart = new swc.Image();
-			ImagePart.Visibility = sw.Visibility.Collapsed;
-			var grid = new swc.Grid();
-			grid.ColumnDefinitions.Add(new swc.ColumnDefinition { Width = sw.GridLength.Auto });
-			grid.ColumnDefinitions.Add(new swc.ColumnDefinition { Width = new sw.GridLength(1, sw.GridUnitType.Star) });
-			grid.ColumnDefinitions.Add(new swc.ColumnDefinition { Width = sw.GridLength.Auto });
-			grid.RowDefinitions.Add(new swc.RowDefinition { Height = sw.GridLength.Auto });
-			grid.RowDefinitions.Add(new swc.RowDefinition { Height = new sw.GridLength(1, sw.GridUnitType.Star) });
-			grid.RowDefinitions.Add(new swc.RowDefinition { Height = sw.GridLength.Auto });
-			grid.Children.Add(ImagePart);
-			grid.Children.Add(LabelPart);
+			CreateContent();
 
-			Control.Content = grid;
-
-			sw.Automation.AutomationProperties.SetLabeledBy(Control, LabelPart);
-
-			SetImagePosition();
 			base.Initialize();
 		}
+
+		private void CreateContent()
+		{
+			if (Control.Content is swc.Grid g)
+			{
+				if (_labelPart != null)
+					g.Children.Remove(_labelPart);
+				if (ImagePart != null)
+					g.Children.Remove(ImagePart);
+			}
+			Control.Content = null;
+
+			if (ImagePart == null)
+			{
+				// no image, so just use the label
+				Control.Content = _labelPart;
+				sw.Automation.AutomationProperties.SetLabeledBy(Control, _labelPart);
+				return;
+			}
+
+
+			if (string.IsNullOrEmpty(Text))
+			{
+				// no label, so just use the image
+				sw.Automation.AutomationProperties.SetLabeledBy(Control, null);
+				Control.Content = ImagePart;
+				return;
+			}
+
+			// we have an image and text
+			if (Control.Content is not swc.Grid)
+			{
+				swc.Grid.SetColumn(LabelPart, 1);
+				swc.Grid.SetRow(LabelPart, 1);
+				var grid = new swc.Grid();
+				grid.ColumnDefinitions.Add(new swc.ColumnDefinition { Width = sw.GridLength.Auto });
+				grid.ColumnDefinitions.Add(new swc.ColumnDefinition { Width = new sw.GridLength(1, sw.GridUnitType.Star) });
+				grid.ColumnDefinitions.Add(new swc.ColumnDefinition { Width = sw.GridLength.Auto });
+				grid.RowDefinitions.Add(new swc.RowDefinition { Height = sw.GridLength.Auto });
+				grid.RowDefinitions.Add(new swc.RowDefinition { Height = new sw.GridLength(1, sw.GridUnitType.Star) });
+				grid.RowDefinitions.Add(new swc.RowDefinition { Height = sw.GridLength.Auto });
+				grid.Children.Add(ImagePart);
+				grid.Children.Add(LabelPart);
+
+				Control.Content = grid;
+				sw.Automation.AutomationProperties.SetLabeledBy(Control, LabelPart);
+			}
+			SetImagePosition();
+
+		}
+
 
 		public override bool UseMousePreview => true;
 
 		public override bool UseKeyPreview => true;
 
-#if WINRT
-		public string Text
+		public string? Text
 		{
-			get { return label.Text; }
+			get => _labelPart?.Text;
 			set
 			{
-				label.Text = value;
-				SetImagePosition();
+				if (value == Text)
+					return;
+				var wasEmpty = string.IsNullOrEmpty(Text);
+				var isEmpty = string.IsNullOrEmpty(value);
+
+				if (wasEmpty && !isEmpty)
+				{
+					LabelPart.Text = value;
+					CreateContent();
+				}
+				else if (!wasEmpty && isEmpty)
+				{
+					// don't kill LabelPart, it holds some state
+					LabelPart.Text = null;
+					CreateContent();
+				}
+				else if (!wasEmpty && !isEmpty)
+				{
+					LabelPart.Text = value;
+				}
 			}
 		}
-#else
-		public string Text
-		{
-			get { return (LabelPart.Content as string).ToEtoMnemonic(); }
-			set
-			{
-				LabelPart.Content = value.ToPlatformMnemonic();
-				SetImagePosition();
-			}
-		}
-#endif
+
+
 		static readonly object Image_Key = new object();
 
-#if WINRT
-		void SetImage()
-		{
-			swcimage.Source = Image.ToWpf();
-		}
-#else
 		protected override bool NeedsPixelSizeNotifications => true;
 
 		protected override void OnLogicalPixelSizeChanged()
@@ -150,11 +166,13 @@ namespace Eto.Wpf.Forms.Controls
 			SetImage();
 		}
 
-		void SetImage()
+		bool SetImage()
 		{
+			if (ImagePart == null)
+				return false;
 			ImagePart.Source = Image.ToWpf(ParentScale);
+			return true;
 		}
-#endif
 
 		public Image Image
 		{
@@ -163,42 +181,58 @@ namespace Eto.Wpf.Forms.Controls
 			{
 				if (Widget.Properties.TrySet(Image_Key, value))
 				{
-					SetImage();
-					ImagePart.Visibility = value != null ? sw.Visibility.Visible : sw.Visibility.Collapsed;
-					SetImagePosition();
+					if (ImagePart == null && value != null)
+					{
+						ImagePart = new swc.Image { Source = Image.ToWpf(ParentScale) };
+						CreateContent();
+					}
+					else if (ImagePart != null && value == null)
+					{
+						ImagePart = null;
+						CreateContent();
+					}
+					else if (ImagePart != null && value != null)
+					{
+						SetImage();
+					}
 				}
 			}
 		}
 
 		void SetImagePosition()
 		{
-			bool hideLabel = string.IsNullOrEmpty(Text);
+			if (ImagePart == null || LabelPart == null)
+				return;
+			// when hugging the text, only give the grid its desired size so the image ends up beside the label
+			// instead of the label taking up all the leftover space.
+			var fill = ImageNextToText ? sw.HorizontalAlignment.Center : sw.HorizontalAlignment.Stretch;
+			var fillVertical = ImageNextToText ? sw.VerticalAlignment.Center : sw.VerticalAlignment.Stretch;
 			int col, row;
 			sw.Thickness imageSpacing;
 			switch (ImagePosition)
 			{
 				case ButtonImagePosition.Left:
 					col = 0; row = 1;
-					Control.HorizontalContentAlignment = sw.HorizontalAlignment.Stretch;
+					Control.HorizontalContentAlignment = fill;
 					Control.VerticalContentAlignment = sw.VerticalAlignment.Center;
 					imageSpacing = new sw.Thickness(ImageLabelSpacing, 0, 0, 0);
 					break;
 				case ButtonImagePosition.Right:
 					col = 2; row = 1;
-					Control.HorizontalContentAlignment = sw.HorizontalAlignment.Stretch;
+					Control.HorizontalContentAlignment = fill;
 					Control.VerticalContentAlignment = sw.VerticalAlignment.Center;
 					imageSpacing = new sw.Thickness(0, 0, ImageLabelSpacing, 0);
 					break;
 				case ButtonImagePosition.Above:
 					col = 1; row = 0;
 					Control.HorizontalContentAlignment = sw.HorizontalAlignment.Center;
-					Control.VerticalContentAlignment = hideLabel ? sw.VerticalAlignment.Center : sw.VerticalAlignment.Stretch;
+					Control.VerticalContentAlignment = fillVertical;
 					imageSpacing = new sw.Thickness(0, ImageLabelSpacing, 0, 0);
 					break;
 				case ButtonImagePosition.Below:
 					col = 1; row = 2;
 					Control.HorizontalContentAlignment = sw.HorizontalAlignment.Center;
-					Control.VerticalContentAlignment = hideLabel ? sw.VerticalAlignment.Center : sw.VerticalAlignment.Stretch;
+					Control.VerticalContentAlignment = fillVertical;
 					imageSpacing = new sw.Thickness(0, 0, 0, ImageLabelSpacing);
 					break;
 				case ButtonImagePosition.Overlay:
@@ -213,8 +247,7 @@ namespace Eto.Wpf.Forms.Controls
 
 			swc.Grid.SetColumn(ImagePart, col);
 			swc.Grid.SetRow(ImagePart, row);
-			LabelPart.Visibility = hideLabel ? sw.Visibility.Collapsed : sw.Visibility.Visible;
-			LabelPart.Margin = ImagePart.Visibility == sw.Visibility.Visible ? imageSpacing : new sw.Thickness(0, 0, 0, 0);
+			LabelPart.Margin = imageSpacing;
 		}
 
 		static readonly object ImagePosition_Key = new object();
@@ -223,6 +256,14 @@ namespace Eto.Wpf.Forms.Controls
 		{
 			get { return Widget.Properties.Get<ButtonImagePosition>(ImagePosition_Key); }
 			set { Widget.Properties.Set(ImagePosition_Key, value, SetImagePosition); }
+		}
+
+		static readonly object ImageNextToText_Key = new object();
+
+		public bool ImageNextToText
+		{
+			get { return Widget.Properties.Get<bool>(ImageNextToText_Key); }
+			set { Widget.Properties.Set(ImageNextToText_Key, value, SetImagePosition); }
 		}
 
 		public override void AttachEvent(string id)
@@ -248,10 +289,13 @@ namespace Eto.Wpf.Forms.Controls
 			}
 		}
 
-		public override  Color TextColor
+		public override Color TextColor
 		{
-			get { return LabelPart.Foreground.ToEtoColor(); }
-			set { LabelPart.Foreground = value.ToWpfBrush(Control.Foreground); }
+			get => (_labelPart?.Foreground ?? Control.Foreground).ToEtoColor();
+			set
+			{
+				LabelPart.Foreground = value.ToWpfBrush();
+			}
 		}
 
 		static readonly object MinimumSize_Key = new object();
@@ -269,5 +313,24 @@ namespace Eto.Wpf.Forms.Controls
 				}
 			}
 		}
+
+		public bool UseMnemonic
+		{
+			get => _labelPart?.UseMnemonic ?? true;
+			set => LabelPart.UseMnemonic = value;
+		}
+
+		public bool AlwaysShowMnemonic
+		{
+			get => _labelPart?.AlwaysShowMnemonic ?? false;
+			set => LabelPart.AlwaysShowMnemonic = value;
+		}
+
+		public bool EnableMnemonic
+		{
+			get => _labelPart?.EnableMnemonic ?? true;
+			set => LabelPart.EnableMnemonic = value;
+		}
+
 	}
 }

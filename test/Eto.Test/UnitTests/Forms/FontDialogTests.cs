@@ -1,7 +1,3 @@
-using System;
-using System.Threading.Tasks;
-using Eto.Drawing;
-using Eto.Forms;
 using NUnit.Framework;
 
 namespace Eto.Test.UnitTests.Forms
@@ -49,7 +45,7 @@ namespace Eto.Test.UnitTests.Forms
 				return new StackLayout { Items = { label, new TextArea() }, Padding = 10 };
 			});
 
-			Assert.IsTrue(wasChanged, "#1 - Font was not changed!");
+			Assert.That(wasChanged, Is.True, "#1 - Font was not changed!");
 		}
 
 		[Test, ManualTest]
@@ -86,7 +82,7 @@ namespace Eto.Test.UnitTests.Forms
 				return new StackLayout { Items = { label, new TextArea() }, Padding = 10 };
 			});
 
-			Assert.IsTrue(wasChanged, "#1 - Font was not changed!");
+			Assert.That(wasChanged, Is.True, "#1 - Font was not changed!");
 		}
 	}
 }

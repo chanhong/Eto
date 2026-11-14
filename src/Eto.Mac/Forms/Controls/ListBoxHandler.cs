@@ -1,49 +1,5 @@
-using System;
-using Eto.Forms;
-using System.Collections.Generic;
 using Eto.Mac.Forms.Controls;
-using Eto.Drawing;
 using Eto.Mac.Drawing;
-using System.Collections;
-using System.Linq;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
-#if XAMMAC
-using nnint = System.Int32;
-#elif Mac64
-using nnint = System.UInt64;
-#else
-using nnint = System.UInt32;
-#endif
-
-
 namespace Eto.Mac.Forms.Controls
 {
 	public class EtoScrollView : NSScrollView, IMacControl
@@ -92,15 +48,11 @@ namespace Eto.Mac.Forms.Controls
 		CollectionHandler collection;
 		MacImageListItemCell cell;
 
-		public override NSView ContainerControl
-		{
-			get { return scroll; }
-		}
+		public override NSView ContainerControl => scroll;
 
-		public NSScrollView Scroll
-		{
-			get { return scroll; }
-		}
+		public NSScrollView Scroll => scroll;
+
+		public override NSView TextInputControl => Control;
 
 		public class EtoDataSource : NSTableViewDataSource
 		{
@@ -110,18 +62,24 @@ namespace Eto.Mac.Forms.Controls
 
 			public override NSObject GetObjectValue(NSTableView tableView, NSTableColumn tableColumn, nint row)
 			{
-				var w = Handler.Widget;
-				var item = Handler.collection.ElementAt((int)row);
+				var h = Handler;
+				if (h == null)
+					return null;
+				var w = h.Widget;
+				var item = h.collection.ElementAt((int)row);
 				return new MacImageData
 				{
-					Text = new NSString(Convert.ToString(w.ItemTextBinding.GetValue(item))),
+					Text = new NSString(Convert.ToString(w.ItemTextBinding.GetValue(item)) ?? string.Empty),
 					Image = w.ItemImageBinding != null ? ((Image)w.ItemImageBinding.GetValue(item)).ToNS() : null
 				};
 			}
 
 			public override nint GetRowCount(NSTableView tableView)
 			{
-				return Handler.collection.Collection == null ? 0 : Handler.collection.Collection.Count();
+				var h = Handler;
+				if (h == null)
+					return 0;
+				return h.collection.Collection == null ? 0 : h.collection.Collection.Count();
 			}
 		}
 
@@ -138,12 +96,18 @@ namespace Eto.Mac.Forms.Controls
 
 			public override void SelectionDidChange(NSNotification notification)
 			{
-				Handler.Callback.OnSelectedIndexChanged(Handler.Widget, EventArgs.Empty);
+				var h = Handler;
+				if (h == null)
+					return;
+				h.Callback.OnSelectedIndexChanged(h.Widget, EventArgs.Empty);
 			}
 
 			public override nfloat GetRowHeight(NSTableView tableView, nint row)
 			{
-				return Handler.Control.GetCell(0, row).CellSize.Height;
+				var h = Handler;
+				if (h == null)
+					return tableView.RowHeight;
+				return h.Control.GetCell(0, row).CellSize.Height;
 			}
 		}
 
@@ -152,21 +116,23 @@ namespace Eto.Mac.Forms.Controls
 			public WeakReference WeakHandler { get; set; }
 
 			public ListBoxHandler Handler
-			{ 
+			{
 				get { return (ListBoxHandler)WeakHandler.Target; }
-				set { WeakHandler = new WeakReference(value); } 
+				set { WeakHandler = new WeakReference(value); }
 			}
 
 			public override NSMenu MenuForEvent(NSEvent theEvent)
 			{
-				if (Handler.ContextMenu != null)
-					return Handler.ContextMenu.ControlObject as NSMenu;
+				var h = Handler;
+				if (h?.ContextMenu != null)
+					return h.ContextMenu.ControlObject as NSMenu;
 				return base.MenuForEvent(theEvent);
 			}
 
 			public EtoListBoxTableView()
 			{
 				HeaderView = null;
+				Style = NSTableViewStyle.Plain;
 			}
 
 			public EtoListBoxTableView(IntPtr handle) : base(handle)
@@ -185,17 +151,8 @@ namespace Eto.Mac.Forms.Controls
 			}
 		}
 
-		public ContextMenu ContextMenu
-		{
-			get;
-			set;
-		}
+		protected override NSTableView CreateControl() => new EtoListBoxTableView();
 
-		protected override NSTableView CreateControl()
-		{
-			return new EtoListBoxTableView();
-		}
-			
 		protected override void Initialize()
 		{
 			collection = new CollectionHandler { Handler = this };
@@ -213,6 +170,7 @@ namespace Eto.Mac.Forms.Controls
 			Control.Delegate = new EtoDelegate { Handler = this };
 
 			scroll = new EtoScrollView { Handler = this };
+			scroll.DrawsBackground = false;
 			scroll.AutoresizesSubviews = true;
 			scroll.DocumentView = Control;
 			scroll.HasVerticalScroller = true;
@@ -247,7 +205,8 @@ namespace Eto.Mac.Forms.Controls
 						cell.Font = NSFont.SystemFontOfSize(NSFont.SystemFontSize);
 					Control.ReloadData();
 					InvalidateMeasure();
-				};
+				}
+				;
 			}
 		}
 
@@ -312,7 +271,7 @@ namespace Eto.Mac.Forms.Controls
 					Control.DeselectAll(Control);
 				else
 				{
-					Control.SelectRow((nnint)value, false);
+					Control.SelectRow((nint)value, false);
 					Control.ScrollRowToVisible(value);
 				}
 			}
@@ -336,9 +295,9 @@ namespace Eto.Mac.Forms.Controls
 		{
 			get { return cell.TextColor.ToEto(); }
 			set
-			{ 
+			{
 				cell.TextColor = value.ToNSUI();
-				Control.SetNeedsDisplay();
+				Control.NeedsDisplay = true;
 			}
 		}
 
@@ -375,28 +334,20 @@ namespace Eto.Mac.Forms.Controls
 
 			var intercellSpacing = Control.IntercellSpacing;
 			var count = Control.RowCount;
-			var height = (int)((Control.RowHeight + intercellSpacing.Height) * count);
 
 			// we need to go through each item to calculate its preferred size
-			var size = new CGSize(0, height);
-			var cell = new MacImageTextView();
-			var font = Font.ToNS();
-			if (font != null)
-				cell.TextField.Font = font;
-			var dataSource = Control.DataSource;
-			var column = Control.TableColumns()[0];
+			var size = new CGSize(0, intercellSpacing.Height * count);
 			for (nint i = 0; i < count; i++)
 			{
-				var data = dataSource.GetObjectValue(Control, column, i) as MacImageData;
-				if (data != null)
-				{
-					cell.TextField.ObjectValue = data.Text;
-					cell.Image = data.Image;
-					size.Width = (nfloat)Math.Max(size.Width, cell.FittingSize.Width);
-				}
+				var fittingSize = Control.GetCell(0, i).CellSize;
+				size.Width = (nfloat)Math.Max(size.Width, fittingSize.Width);
+				size.Height += fittingSize.Height;
 			}
 
-			var frameSize = scroll.FrameSizeForContentSize(size, false, false);
+			var hbar = size.Width > availableSize.Width;
+			var vbar = size.Height > availableSize.Height;
+
+			var frameSize = scroll.FrameSizeForContentSize(size, hbar, vbar);
 
 			var etoFrameSize = frameSize.ToEto();
 
@@ -408,5 +359,16 @@ namespace Eto.Mac.Forms.Controls
 			return etoFrameSize;
 		}
 
+		public BorderType Border
+		{
+			get => scroll.BorderType.ToEto();
+			set
+			{
+				scroll.BorderType = value.ToNS();
+				Control.FocusRingType = value == BorderType.None ? NSFocusRingType.None : NSFocusRingType.Default;
+			}
+		}
+
+		public IIndirectBinding<Image> ItemImageBinding { get; set; }
 	}
 }

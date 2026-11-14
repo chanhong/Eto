@@ -1,7 +1,3 @@
-using swf = System.Windows.Forms;
-using Eto.Forms;
-using System;
-
 namespace Eto.WinForms.Forms.Menu
 {
 	public class SubMenuItemHandler : ButtonMenuItemHandler<SubMenuItem, SubMenuItem.ICallback>, SubMenuItem.IHandler
@@ -12,6 +8,11 @@ namespace Eto.WinForms.Forms.Menu
 		{
 			hiddenItem = new swf.ToolStripMenuItem();
 			Control.DropDownItems.Add(hiddenItem);
+		}
+
+		public SubMenuItemHandler(swf.ToolStripMenuItem menuItem)
+			: base(menuItem)
+		{
 		}
 
 		public override void AddMenu(int index, MenuItem item)

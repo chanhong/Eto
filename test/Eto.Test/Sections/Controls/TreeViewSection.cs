@@ -1,8 +1,3 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-using System.Linq;
-
 namespace Eto.Test.Sections.Controls
 {
 	[Obsolete("Since 2.4")]
@@ -14,7 +9,7 @@ namespace Eto.Test.Sections.Controls
 		readonly CheckBox allowExpanding;
 		readonly TreeView treeView;
 		int newItemCount;
-		static readonly Image Image = TestIcons.TestIcon;
+		static readonly Image Image = TestIcons.TestIcon.WithSize(16, 16);
 		Label hoverNodeLabel;
 		bool cancelLabelEdit;
 

@@ -1,51 +1,61 @@
-﻿using System;
-using System.Globalization;
-using Eto.Forms;
-using Eto.Drawing;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using nnint = System.nint;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
-namespace Eto.Mac.Forms.Controls
+﻿namespace Eto.Mac.Forms.Controls
 {
-	public class NativeControlHandler : MacView<NSView, Control, Control.ICallback>
+	public class NativeControlHandler : MacView<NSView, Control, Control.ICallback>, NativeControlHost.IHandler
 	{
 		NSViewController controller;
+		bool createdOwnView;
+
+		// MacBase.AddMethod adds to the native CLASS, so hosting our own view must not use MacPanelView
+		// itself - every other view deriving from it (notably the window's content view) would inherit
+		// the methods added for this control's events.
+		class EtoNativeControlView : MacPanelView
+		{
+		}
+
+		// there's nothing to measure when we host our own (empty) view, so use a default size
+		// so the control still reports a sane preferred size like other Eto controls.
+		static readonly SizeF DefaultSize = new SizeF(100, 100);
 
 		public NativeControlHandler(NSView nativeControl)
 		{
 			Control = nativeControl;
 		}
+		
+		public NativeControlHandler()
+		{
+		}
+
+		protected override void Initialize()
+		{
+			// don't call any initialize routines as we are hosting a native control
+			base.Initialize();
+		}
+
+		protected override NSView CreateControl()
+		{
+			if (Widget is NativeControlHost host && Callback is NativeControlHost.ICallback callback)
+			{
+				var args = new CreateNativeControlArgs();
+				callback.OnCreateNativeControl(host, args);
+				return CreateHost(args.NativeControl);
+			}
+			return base.CreateControl();
+		}
 
 		public override SizeF GetPreferredSize(SizeF availableSize)
 		{
-			return Control.FittingSize.ToEto();
+			var size = Control?.FittingSize.ToEto() ?? SizeF.Empty;
+			if (createdOwnView)
+			{
+				// there is nothing to measure in the placeholder view we created, so fall back to any
+				// explicitly set size and then to a default so it still reports a sane preferred size.
+				var userSize = UserPreferredSize;
+				if (size.Width <= 0)
+					size.Width = userSize.Width >= 0 ? userSize.Width : Math.Min(DefaultSize.Width, availableSize.Width);
+				if (size.Height <= 0)
+					size.Height = userSize.Height >= 0 ? userSize.Height : Math.Min(DefaultSize.Height, availableSize.Height);
+			}
+			return size;
 		}
 
 		public NativeControlHandler(NSViewController nativeControl)
@@ -54,7 +64,39 @@ namespace Eto.Mac.Forms.Controls
 			Control = controller.View;
 		}
 
-		public override NSView ContainerControl { get { return Control; } }
+		public override NSView ContainerControl => Control;
+		
+		public void Create(object nativeControl)
+		{
+			Control = CreateHost(nativeControl);
+		}
+
+		NSView CreateHost(object nativeControl)
+		{
+			if (nativeControl == null)
+			{
+				createdOwnView = true;
+				return new EtoNativeControlView();
+			}
+			else if (nativeControl is NSView view)
+			{
+				return view;
+			}
+			else if (nativeControl is NSViewController viewController)
+			{
+				controller = viewController;
+				return controller.View;
+			}
+			else if (nativeControl is IntPtr handle)
+			{
+				view = Runtime.GetNSObject(handle) as NSView;
+				if (view == null)
+					throw new InvalidOperationException("supplied handle is invalid or does not refer to an object derived from NSView");
+				return view;
+			}
+			else
+				throw new NotSupportedException($"Native control of type {nativeControl.GetType()} is not supported by this platform");
+		}
 	}
 }
 

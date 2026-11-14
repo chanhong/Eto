@@ -1,10 +1,3 @@
-using System;
-using System.Linq;
-using sd = System.Drawing;
-using swf = System.Windows.Forms;
-using Eto.Forms;
-using System.Runtime.InteropServices;
-using System.ComponentModel;
 
 namespace Eto.WinForms.Forms.Controls
 {
@@ -67,9 +60,9 @@ namespace Eto.WinForms.Forms.Controls
 	}
 
 	public abstract class TextBoxHandler<TControl, TWidget, TCallback> : WindowsControl<TControl, TWidget, TCallback>, TextBox.IHandler
-		where TControl: swf.Control
-		where TWidget: TextBox
-		where TCallback: TextBox.ICallback
+		where TControl : swf.Control
+		where TWidget : TextBox
+		where TCallback : TextBox.ICallback
 	{
 		public abstract swf.TextBox SwfTextBox { get; }
 
@@ -84,6 +77,8 @@ namespace Eto.WinForms.Forms.Controls
 				SetPlaceholderText(); // setting border clears this out for some reason
 			}
 		}
+
+		public override Size? GetDefaultSize(Size availableSize) => new Size(100, 23);
 
 		public TextAlignment TextAlignment
 		{
@@ -116,7 +111,7 @@ namespace Eto.WinForms.Forms.Controls
 									selection = new Range<int>(e.KeyData == Keys.Delete ? CaretIndex : CaretIndex - 1);
 								if (selection.Start >= 0 && selection.End < SwfTextBox.TextLength)
 								{
-									var tia = new TextChangingEventArgs(string.Empty, selection, true);
+									var tia = new TextChangingEventArgs(string.Empty, selection, TextChangeSource.Keyboard);
 									Callback.OnTextChanging(Widget, tia);
 									e.Handled = tia.Cancel;
 								}
@@ -137,7 +132,7 @@ namespace Eto.WinForms.Forms.Controls
 
 									if (end > start)
 									{
-										var tia = new TextChangingEventArgs(string.Empty, new Range<int>(start, end - 1), true);
+										var tia = new TextChangingEventArgs(string.Empty, new Range<int>(start, end - 1), TextChangeSource.Keyboard);
 										Callback.OnTextChanging(Widget, tia);
 										e.Handled = tia.Cancel;
 									}
@@ -158,7 +153,7 @@ namespace Eto.WinForms.Forms.Controls
 
 									if (end > start)
 									{
-										var tia = new TextChangingEventArgs(string.Empty, new Range<int>(start, end - 1), true);
+										var tia = new TextChangingEventArgs(string.Empty, new Range<int>(start, end - 1), TextChangeSource.Keyboard);
 										Callback.OnTextChanging(Widget, tia);
 										e.Handled = tia.Cancel;
 									}
@@ -168,7 +163,7 @@ namespace Eto.WinForms.Forms.Controls
 					};
 					Widget.TextInput += (sender, e) =>
 					{
-						var tia = new TextChangingEventArgs(e.Text, Selection, true);
+						var tia = new TextChangingEventArgs(e.Text, Selection, TextChangeSource.Keyboard);
 						Callback.OnTextChanging(Widget, tia);
 						e.Cancel = tia.Cancel;
 					};
@@ -178,13 +173,13 @@ namespace Eto.WinForms.Forms.Controls
 						{
 							clipboard.Clear();
 							clipboard.Text = SwfTextBox.SelectedText;
-							var tia = new TextChangingEventArgs(string.Empty, Selection, true);
+							var tia = new TextChangingEventArgs(string.Empty, Selection, TextChangeSource.Cut);
 							Callback.OnTextChanging(Widget, tia);
 							e.Cancel = tia.Cancel;
 						};
 						EtoTextBox.Pasting += (sender, e) =>
 						{
-							var tia = new TextChangingEventArgs(clipboard.Text, Selection, true);
+							var tia = new TextChangingEventArgs(clipboard.Text, Selection, TextChangeSource.Paste);
 							Callback.OnTextChanging(Widget, tia);
 							e.Cancel = tia.Cancel;
 						};
@@ -222,7 +217,7 @@ namespace Eto.WinForms.Forms.Controls
 				Widget.Properties.Set(PlaceholderText_Key, value, SetPlaceholderText);
 			}
 		}
-		
+
 		void SetPlaceholderText()
 		{
 			Win32.SendMessage(SwfTextBox.Handle, Win32.WM.EM_SETCUEBANNER, IntPtr.Zero, PlaceholderText);
@@ -263,6 +258,34 @@ namespace Eto.WinForms.Forms.Controls
 				SwfTextBox.SelectionLength = value.Length();
 				if (!Widget.Loaded)
 					ShouldSelect = false;
+			}
+		}
+
+		public int GetCharacterIndex(PointF location) => SwfTextBox.GetCharIndexFromPosition(new sd.Point((int)location.X, (int)location.Y));
+
+		public PaddingF TextInset
+		{
+			get
+			{
+				var textBox = SwfTextBox;
+				var border = textBox.BorderStyle == swf.BorderStyle.Fixed3D ? swf.SystemInformation.Border3DSize
+					: textBox.BorderStyle == swf.BorderStyle.FixedSingle ? swf.SystemInformation.BorderSize
+					: sd.Size.Empty;
+
+				// creating the handle just to measure would have side effects, so estimate until it exists
+				if (!textBox.IsHandleCreated)
+					return new PaddingF(border.Width + 1, border.Height + 1, border.Width + 1, border.Height + 1);
+
+				// the formatting rectangle is where the edit control lays out its text, in its client area
+				var rect = new Win32.RECT();
+				Win32.SendMessage(textBox.Handle, Win32.WM.EM_GETRECT, IntPtr.Zero, ref rect);
+
+				// the text box can be inside another control (e.g. a stepper), so offset to the outer control's edges
+				var controlOrigin = Control.Parent != null ? Control.Parent.PointToScreen(Control.Location) : Control.PointToScreen(sd.Point.Empty);
+				var clientOrigin = textBox.PointToScreen(sd.Point.Empty);
+				var left = clientOrigin.X - controlOrigin.X + rect.left;
+				var top = clientOrigin.Y - controlOrigin.Y + rect.top;
+				return new PaddingF(left, top, Control.Width - (left + rect.width), Control.Height - (top + rect.height));
 			}
 		}
 
@@ -320,13 +343,18 @@ namespace Eto.WinForms.Forms.Controls
 				var newText = value ?? string.Empty;
 				if (newText != oldText)
 				{
-					var args = new TextChangingEventArgs(oldText, newText, false);
+					var args = new TextChangingEventArgs(oldText, newText, TextChangeSource.Programmatic);
 					Callback.OnTextChanging(Widget, args);
 					if (args.Cancel)
 						return;
+
+					DisableTextChanged++;
 					base.Text = value;
+					DisableTextChanged--;
 					if (AutoSelectMode == AutoSelectMode.Never)
 						Selection = new Range<int>(value.Length, value.Length - 1);
+
+					Callback.OnTextChanged(Widget, EventArgs.Empty);
 				}
 			}
 		}
@@ -344,5 +372,12 @@ namespace Eto.WinForms.Forms.Controls
 			get { return Widget.Properties.Get(ShouldSelect_Key, true); }
 			set { Widget.Properties.Set(ShouldSelect_Key, value, true); }
 		}
+
+		public bool AlwaysShowSelection
+		{
+			get => SwfTextBox.HideSelection == false;
+			set => SwfTextBox.HideSelection = !value;
+		}
+
 	}
 }

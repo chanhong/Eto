@@ -1,25 +1,14 @@
-using System;
-using System.Runtime.InteropServices;
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#endif
-
 namespace Eto.Mac
 {
 	static class MarshalDelegates
 	{
 		// delegates used for marshalling in .NET Core, as it doesn't support marshalling Func<> or Action<T>
 		public delegate bool Func_IntPtr_IntPtr_IntPtr_IntPtr_bool(IntPtr arg1, IntPtr arg2, IntPtr arg3, IntPtr arg4);
+		public delegate IntPtr Func_IntPtr_IntPtr_IntPtr(IntPtr arg1, IntPtr arg2);
+		public delegate NSRange Func_IntPtr_IntPtr_NSRange(IntPtr arg1, IntPtr arg2);
+		public delegate IntPtr Func_IntPtr_IntPtr_NSRange_IntPtr_IntPtr(IntPtr arg1, IntPtr arg2, NSRange arg3, IntPtr arg4);
+		public delegate nuint Func_IntPtr_IntPtr_CGPoint_nuint(IntPtr arg1, IntPtr arg2, CGPoint arg3);
+		public delegate CGRect Func_IntPtr_IntPtr_NSRange_IntPtr_CGRect(IntPtr arg1, IntPtr arg2, NSRange arg3, IntPtr arg4);
 		public delegate void Action_IntPtr_IntPtr_IntPtr(IntPtr arg1, IntPtr arg2, IntPtr arg3);
 		public delegate bool Func_IntPtr_IntPtr_bool(IntPtr arg1, IntPtr arg2);
 		public delegate bool Func_IntPtr_IntPtr_IntPtr_bool(IntPtr arg1, IntPtr arg2, IntPtr arg3);
@@ -27,6 +16,8 @@ namespace Eto.Mac
 		public delegate void Action_IntPtr_IntPtr(IntPtr arg1, IntPtr arg2);
 		public delegate NSDragOperation Func_IntPtr_IntPtr_IntPtr_NSDragOperation(IntPtr arg1, IntPtr arg2, IntPtr arg3);
 		public delegate void Action_IntPtr_IntPtr_CGSize(IntPtr arg1, IntPtr arg2, CGSize arg3);
+		public delegate void Action_IntPtr_IntPtr_IntPtr_NSRange(IntPtr arg1, IntPtr arg2, IntPtr arg3, NSRange range);
+		public delegate void Action_IntPtr_IntPtr_IntPtr_NSRange_NSRange(IntPtr arg1, IntPtr arg2, IntPtr arg3, NSRange range, NSRange range2);
 	}
 
 	public static class EtoBundle

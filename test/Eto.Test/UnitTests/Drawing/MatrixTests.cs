@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using NUnit.Framework;
-using Eto.Drawing;
-
+﻿using NUnit.Framework;
 namespace Eto.Test.UnitTests.Drawing
 {
 	/// <summary>
@@ -19,12 +13,6 @@ namespace Eto.Test.UnitTests.Drawing
 	[TestFixture]
 	public class MatrixTests
 	{
-		public MatrixTests()
-		{
-			// initialize test generator if running through IDE or nunit-gui
-			TestBase.Initialize();
-		}
-
 		public static bool Equals(IMatrix m, float xx, float yx, float xy, float yy, float x0, float y0)
 		{
 			var e = m.Elements;
@@ -51,7 +39,7 @@ namespace Eto.Test.UnitTests.Drawing
 		public void Matrix_CreateIdentity_VerifyElements()
 		{
 			var m = Matrix.Create();
-			Assert.IsTrue(Equals(m, 1, 0, 0, 1, 0, 0));
+			Assert.That(Equals(m, 1, 0, 0, 1, 0, 0), Is.True);
 		}
 
 		[TestCase(
@@ -66,7 +54,7 @@ namespace Eto.Test.UnitTests.Drawing
 			var m = Matrix.Create(xx, yx, xy, yy, x0, y0);
 			var a = Matrix.Create(XX, YX, XY, YY, X0, Y0);
 			m.Append(a);
-			Assert.IsTrue(Equals(m, Xx, Yx, Xy, Yy, a0, b0));
+			Assert.That(Equals(m, Xx, Yx, Xy, Yy, a0, b0), Is.True);
 		}
 
 		[TestCase(
@@ -81,7 +69,7 @@ namespace Eto.Test.UnitTests.Drawing
 			var m = Matrix.Create(xx, yx, xy, yy, x0, y0);
 			var a = Matrix.Create(XX, YX, XY, YY, X0, Y0);
 			m.Prepend(a);
-			Assert.IsTrue(Equals(m, Xx, Yx, Xy, Yy, a0, b0));
+			Assert.That(Equals(m, Xx, Yx, Xy, Yy, a0, b0), Is.True);
 		}
 
 		[TestCase(
@@ -99,7 +87,7 @@ namespace Eto.Test.UnitTests.Drawing
 		{
 			var m = Matrix.Create(xx, yx, xy, yy, x0, y0);
 			m.Invert();
-			Assert.IsTrue(Equals(m, XX, YX, XY, YY, X0, Y0));
+			Assert.That(Equals(m, XX, YX, XY, YY, X0, Y0), Is.True);
 		}
 
 		[Test]
@@ -107,7 +95,7 @@ namespace Eto.Test.UnitTests.Drawing
 		{
 			var m = Matrix.Create();
 			m.Translate(100, 200);
-			Assert.IsTrue(Equals(m, 1, 0, 0, 1, 100, 200));
+			Assert.That(Equals(m, 1, 0, 0, 1, 100, 200), Is.True);
 		}
 
 		[TestCase(
@@ -119,7 +107,7 @@ namespace Eto.Test.UnitTests.Drawing
 		{
 			var m = Matrix.Create(xx, yx, xy, yy, x0, y0);
 			m.Rotate(degrees);
-			Assert.IsTrue(Equals(m, XX, YX, XY, YY, X0, Y0));
+			Assert.That(Equals(m, XX, YX, XY, YY, X0, Y0), Is.True);
 		}
 
 		[TestCase(
@@ -131,7 +119,7 @@ namespace Eto.Test.UnitTests.Drawing
 		{
 			var m = Matrix.Create(xx, yx, xy, yy, x0, y0);
 			m.Scale(sx, sy);
-			Assert.IsTrue(Equals(m, XX, YX, XY, YY, X0, Y0));
+			Assert.That(Equals(m, XX, YX, XY, YY, X0, Y0), Is.True);
 		}
 
 
@@ -144,7 +132,7 @@ namespace Eto.Test.UnitTests.Drawing
 		{
 			var m = Matrix.Create(xx, yx, xy, yy, x0, y0);
 			var p = m.TransformPoint(new PointF(x, y));
-			Assert.IsTrue(AreEqual(new PointF(X, Y), p));
+			Assert.That(AreEqual(new PointF(X, Y), p), Is.True);
 		}
 	}
 }

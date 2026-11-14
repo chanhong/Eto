@@ -1,48 +1,10 @@
-using System;
-using System.Globalization;
-using System.Linq;
-using Eto.Drawing;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#elif OSX
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-using MonoMac;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 #if OSX
 using Eto.Mac.Forms;
 
-#if XAMMAC2
-using GraphicsBase = Eto.Mac.Forms.MacBase<CoreGraphics.CGContext, Eto.Drawing.Graphics, Eto.Drawing.Graphics.ICallback>;
-#else
+#if MONOMAC
 using GraphicsBase = Eto.Mac.Forms.MacBase<MonoMac.CoreGraphics.CGContext, Eto.Drawing.Graphics, Eto.Drawing.Graphics.ICallback>;
+#else
+using GraphicsBase = Eto.Mac.Forms.MacBase<CoreGraphics.CGContext, Eto.Drawing.Graphics, Eto.Drawing.Graphics.ICallback>;
 #endif
 
 namespace Eto.Mac.Drawing
@@ -76,7 +38,6 @@ namespace Eto.iOS.Drawing
 		#if OSX
 		NSGraphicsContext graphicsContext;
 		bool disposeContext;
-		readonly NSView view;
 		#endif
 		float height;
 		bool isOffset;
@@ -92,6 +53,8 @@ namespace Eto.iOS.Drawing
 		public NSView DisplayView { get; private set; }
 
 		static readonly object PixelOffsetMode_Key = new object();
+		
+		public NSGraphicsContext GraphicsContext => graphicsContext;
 
 		public PixelOffsetMode PixelOffsetMode
 		{
@@ -120,55 +83,18 @@ namespace Eto.iOS.Drawing
 		}
 
 		#if OSX
-
-		public GraphicsHandler(NSView view)
-		{
-			this.view = view;
-			graphicsContext = NSGraphicsContext.FromWindow(view.Window);
-			graphicsContext = graphicsContext.IsFlipped ? graphicsContext : NSGraphicsContext.FromGraphicsPort(graphicsContext.GraphicsPortHandle, true);
-			disposeContext = true;
-			Control = graphicsContext.GraphicsPort;
-
-			view.PostsFrameChangedNotifications = true;
-			AddObserver(NSView.FrameChangedNotification, FrameDidChange, view);
-
-			// if control is in a scrollview, we need to trap when it's scrolled as well
-			var parent = view.Superview;
-			while (parent != null)
-			{
-				var scroll = parent as NSScrollView;
-				if (scroll != null)
-				{
-					scroll.ContentView.PostsBoundsChangedNotifications = true;
-					AddObserver(NSView.BoundsChangedNotification, FrameDidChange, scroll.ContentView);
-				}
-				parent = parent.Superview;
-			}
-
-			SetDefaults();
-			InitializeContext(view.IsFlipped);
-		}
-
-		static void FrameDidChange(ObserverActionEventArgs e)
-		{
-			var h = e.Handler as GraphicsHandler;
-			if (h != null && h.Control != null)
-			{
-				h.RewindAll();
-				
-				h.Control.RestoreState();
-
-				h.InitializeContext(h.view.IsFlipped);
-			}
-		}
-
-		public GraphicsHandler(NSView view, NSGraphicsContext graphicsContext, float height, bool flipped)
+		public GraphicsHandler(NSView view, NSGraphicsContext graphicsContext, float height, CGRect? clipRect)
 		{
 			DisplayView = view;
 			this.height = height;
-			this.graphicsContext = flipped != graphicsContext.IsFlipped ? graphicsContext : NSGraphicsContext.FromGraphicsPort(graphicsContext.GraphicsPortHandle, true);
-			Control = this.graphicsContext.GraphicsPort;
-			SetDefaults();
+			var flipped = view?.IsFlipped ?? false;
+			this.graphicsContext = graphicsContext.IsFlipped ? graphicsContext : NSGraphicsContext.FromCGContext(graphicsContext.CGContext, true);
+			Control = this.graphicsContext.CGContext;
+			
+			// Clip to bounds otherwise you can draw outside the control on macOS Sonoma
+			if (clipRect != null)
+				Control.ClipToRect(clipRect.Value);
+				
 			InitializeContext(!flipped);
 		}
 
@@ -180,12 +106,16 @@ namespace Eto.iOS.Drawing
 			this.height = (float)height;
 			this.Control = context;
 
-			SetDefaults();
-			InitializeContext(false);
+			InitializeContext(true);
 		}
 
 		protected override void Dispose(bool disposing)
 		{
+			if (disposing)
+			{
+				_formattedText?.Dispose();
+				_formattedText = null;
+			}
 			base.Dispose(disposing);
 		}
 
@@ -266,9 +196,9 @@ namespace Eto.iOS.Drawing
 				graphicsContext = NSGraphicsContext.FromBitmap(rep);
 			}
 
-			graphicsContext = graphicsContext.IsFlipped ? graphicsContext : NSGraphicsContext.FromGraphicsPort(graphicsContext.GraphicsPortHandle, true);
+			graphicsContext = graphicsContext.IsFlipped ? graphicsContext : NSGraphicsContext.FromCGContext(graphicsContext.CGContext, true);
 			disposeContext = true;
-			Control = graphicsContext.GraphicsPort;
+			Control = graphicsContext.CGContext;
 			PointsPerPixel = (float)(rep.PixelsWide / handler.Control.Size.Width);
 #elif IOS
 			var cgimage = handler.Control.CGImage;
@@ -277,7 +207,6 @@ namespace Eto.iOS.Drawing
 #endif
 
 			height = image.Size.Height;
-			SetDefaults();
 			InitializeContext(true);
 			if (DrawingImage != null && SourceImage != null)
 			{
@@ -302,23 +231,7 @@ namespace Eto.iOS.Drawing
 #endif
 		}
 
-		#if OSX
-		public float ViewHeight
-		{
-			get { return (float)(view != null ? view.Bounds.Height : height); }
-		}
-		#elif IOS
-		public float ViewHeight
-		{
-			get { return height; }
-		}
-		#endif
-
-		void SetDefaults()
-		{
-			Control.InterpolationQuality = CGInterpolationQuality.Default;
-			Control.SetAllowsSubpixelPositioning(false);
-		}
+		public float ViewHeight => (float)height;
 
 		#if OSX
 		CGSize? phase;
@@ -344,36 +257,17 @@ namespace Eto.iOS.Drawing
 		}
 		#endif
 
-		void InitializeContext(bool viewFlipped)
+		void InitializeContext(bool flipCoordinates)
 		{
 			Control.SaveState();
+			Control.InterpolationQuality = CGInterpolationQuality.Default;
+			Control.SetAllowsSubpixelPositioning(false);
+
+			if (flipCoordinates)
+				Control.ConcatCTM(new CGAffineTransform(1, 0, 0, -1, 0, ViewHeight));
 
 			#if OSX
-			// os x has different flipped states (depending on layers, etc), so compensate to make 0,0 at the top-left
-			if (view != null)
-			{
-				// we have a view (drawing directly to the screen), so adjust to where it is
-				Control.ClipToRect(view.ConvertRectToView(view.VisibleRect(), null));
-				var pos = view.ConvertPointToView(CGPoint.Empty, null);
-				if (!viewFlipped)
-					pos.Y += view.Frame.Height;
-				Control.ConcatCTM(new CGAffineTransform(1, 0, 0, -1, (float)pos.X, (float)pos.Y));
-			}
-			else
-			{
-				// drawing to a bitmap or during a drawRect operation
-				if (viewFlipped)
-					Control.ConcatCTM(new CGAffineTransform(1, 0, 0, -1, 0, ViewHeight));
-			}
-
 			phase = null;
-
-			#elif IOS
-			if (viewFlipped)
-			{
-				// on ios, we flip the context if we're drawing on a bitmap otherwise we don't need to
-				Control.ConcatCTM(new CGAffineTransform(1, 0, 0, -1, 0, ViewHeight));
-			}
 			#endif
 
 			ApplyAll();
@@ -482,7 +376,7 @@ namespace Eto.iOS.Drawing
 
 			var rect = new CGRect(x, y, width, height);
 			pen.Apply(this);
-			var yscale = rect.Height / rect.Width;
+			var yscale = rect.Width != 0 ? rect.Height / rect.Width : 0;
 			var centerY = rect.GetMidY();
 			var centerX = rect.GetMidX();
 			Control.SaveState(); // save so the drawing of the pen isn't affected by the transform
@@ -500,7 +394,7 @@ namespace Eto.iOS.Drawing
 
 			var rect = new CGRect(x, y, width, height);
 			Control.SaveState(); // save so the drawing of the brush isn't affected by the transform
-			var yscale = rect.Height / rect.Width;
+			var yscale = rect.Width != 0 ? rect.Height / rect.Width : 0;
 			var centerY = rect.GetMidY();
 			var centerX = rect.GetMidX();
 			Control.ConcatCTM(new CGAffineTransform(1.0f, 0, 0, yscale, 0, centerY - centerY * yscale));
@@ -521,7 +415,7 @@ namespace Eto.iOS.Drawing
 			Control.BeginPath();
 			Control.AddPath(path.ToCG());
 			Control.ClosePath();
-			brush.Draw(this, false, FillMode.Winding);
+			brush.Draw(this, false, path.FillMode);
 			EndDrawing();
 		}
 
@@ -601,12 +495,53 @@ namespace Eto.iOS.Drawing
 
 		public void DrawText(Font font, Brush brush, float x, float y, string text)
 		{
+#if OSX
+			if (brush is SolidBrush solidBrush && CanDrawTextLine(font, text))
+			{
+				DrawTextLine((FontHandler)font.Handler, solidBrush.Color, x, y, text);
+				return;
+			}
+#endif
 			var formattedText = SharedFormattedText;
 			formattedText.Text = text;
 			formattedText.Font = font;
 			formattedText.ForegroundBrush = brush;
 			DrawText(formattedText, new PointF(x, y));
 		}
+
+#if OSX
+		// CoreText can't draw underline/strikethrough or break lines, and places emoji differently, so leave those to FormattedText
+		static bool CanDrawTextLine(Font font, string text)
+		{
+			if (font.FontDecoration != FontDecoration.None)
+				return false;
+			foreach (var c in text)
+			{
+				if (char.IsControl(c) || char.IsSurrogate(c) || c == '\u2028' || c == '\u2029')
+					return false;
+			}
+			return true;
+		}
+
+		// Much faster than laying the text out with an NSLayoutManager for every call
+		void DrawTextLine(FontHandler font, Color color, float x, float y, string text)
+		{
+			SetOffset(false);
+			StartDrawing();
+			using (var str = new NSAttributedString(text, font.LineAttributes))
+			using (var line = new CTLine(str))
+			{
+				Control.SetFillColor(color.ToCG());
+				// the text matrix isn't part of the graphics state
+				var textMatrix = Control.TextMatrix;
+				Control.TextMatrix = new CGAffineTransform(1, 0, 0, -1, 0, 0);
+				Control.TextPosition = new CGPoint(x, y + font.LineBaseline);
+				line.Draw(Control);
+				Control.TextMatrix = textMatrix;
+			}
+			EndDrawing();
+		}
+#endif
 
 		public void DrawText(FormattedText formattedText, PointF location)
 		{
@@ -630,6 +565,8 @@ namespace Eto.iOS.Drawing
 		{
 			if (disposing)
 			{
+				_formattedText?.Dispose();
+				_formattedText = null;
 				if (disposeContext && graphicsContext != null)
 					graphicsContext.FlushGraphics();
 				Reset();

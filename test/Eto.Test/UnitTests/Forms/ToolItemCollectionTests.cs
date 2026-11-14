@@ -1,7 +1,4 @@
-﻿using System;
-using NUnit.Framework;
-using Eto.Forms;
-
+﻿using NUnit.Framework;
 namespace Eto.Test.UnitTests.Forms
 {
 	[TestFixture]
@@ -40,7 +37,7 @@ namespace Eto.Test.UnitTests.Forms
 				{
 					if (toolbar.Items[i] is SeparatorToolItem)
 						continue;
-					Assert.AreEqual(i.ToString(), toolbar.Items[i].Text, "Items are out of order");
+					Assert.That(toolbar.Items[i].Text, Is.EqualTo(i.ToString()), "Items are out of order");
 				}
 			});
 		}

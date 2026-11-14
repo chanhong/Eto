@@ -1,9 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using Eto.Forms;
-using System.Runtime.InteropServices;
-
 namespace Eto.GtkSharp.Forms.Controls
 {
 	public interface IGtkTreeModelHandler<TItem, TStore> : IGtkListModelHandler<TItem>
@@ -23,7 +17,7 @@ namespace Eto.GtkSharp.Forms.Controls
 			set => handler = new WeakReference(value);
 		}
 
-		class Node
+		public class Node
 		{
 			public TItem Item { get; set; }
 
@@ -99,6 +93,12 @@ namespace Eto.GtkSharp.Forms.Controls
 			}
 		}
 
+		public int GetRowIndexOfIter(Gtk.TreeIter iter)
+		{
+			var node = GetNodeAtIter(iter);
+			return Handler.DataStore.GetRowOfIndexPath(node.Indices);
+		}
+		
 		public Gtk.TreePath GetPathFromItem(TItem item)
 		{
 			var path = new Gtk.TreePath();
@@ -168,7 +168,7 @@ namespace Eto.GtkSharp.Forms.Controls
 			return result;
 		}
 
-		static Node GetNodeAtIter(Gtk.TreeIter iter)
+		public Node GetNodeAtIter(Gtk.TreeIter iter)
 		{
 			if (iter.UserData == IntPtr.Zero)
 				return null;

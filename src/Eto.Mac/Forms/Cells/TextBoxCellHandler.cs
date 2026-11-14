@@ -1,36 +1,6 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.Mac.Forms.Controls;
 using Eto.Mac.Drawing;
 
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
 
 namespace Eto.Mac.Forms.Cells
 {
@@ -41,14 +11,12 @@ namespace Eto.Mac.Forms.Cells
 
 		public override nfloat GetPreferredWidth(object value, CGSize cellSize, int row, object dataItem)
 		{
-			field.Font = defaultFont;
-
-			var args = new MacCellFormatArgs(ColumnHandler.Widget, dataItem, row, field);
+			field.ObjectValue = value as NSObject ?? new NSString(string.Empty);
+			
+			SetDefaults(field);
+			var args = new MacGridCellFormatEventArgs(ColumnHandler.Widget, dataItem, row, field);
 			ColumnHandler.DataViewHandler.OnCellFormatting(args);
 
-			if (args.FontSet)
-				field.Font = args.Font.ToNS();
-			field.ObjectValue = value as NSObject ?? new NSString(string.Empty);
 			return field.Cell.CellSizeForBounds(new CGRect(0, 0, nfloat.MaxValue, cellSize.Height)).Width;
 		}
 
@@ -57,9 +25,10 @@ namespace Eto.Mac.Forms.Cells
 			if (Widget.Binding != null)
 			{
 				var val = Widget.Binding.GetValue(dataItem);
-				return val != null ? new NSString(Convert.ToString(val)) : NSString.Empty;
+				var ret = val != null ? Convert.ToString(val) : string.Empty;
+				return (NSString)ret;
 			}
-			return NSString.Empty;
+			return (NSString)string.Empty;
 		}
 
 		public override void SetObjectValue(object dataItem, NSObject value)
@@ -74,34 +43,20 @@ namespace Eto.Mac.Forms.Cells
 			}
 		}
 
-		public override Color GetBackgroundColor(NSView view)
-		{
-			return ((CellView)view).Cell.BetterBackgroundColor.ToEto();
-		}
+		public override Color GetBackgroundColor(NSView view) => ((CellView)view).Cell.BetterBackgroundColor.ToEto();
+		public override void SetBackgroundColor(NSView view, Color color) => ((CellView)view).Cell.BetterBackgroundColor = color.ToNSUI();
 
-		public override void SetBackgroundColor(NSView view, Color color)
-		{
-			((CellView)view).Cell.BetterBackgroundColor = color.ToNSUI();
-		}
+		public override Color GetForegroundColor(NSView view) => ((CellView)view).TextColor.ToEto();
+		public override void SetForegroundColor(NSView view, Color color) => ((CellView)view).TextColor = color.ToNSUI();
 
-		public override Color GetForegroundColor(NSView view)
-		{
-			return ((CellView)view).TextColor.ToEto();
-		}
+		public override Font GetFont(NSView view) => ((CellView)view).Font.ToEto();
+		public override void SetFont(NSView view, Font font) => ((CellView)view).Font = font.ToNS();
 
-		public override void SetForegroundColor(NSView view, Color color)
+		private void SetDefaults(CellView view)
 		{
-			((CellView)view).TextColor = color.ToNSUI();
-		}
-
-		public override Font GetFont(NSView view)
-		{
-			return ((CellView)view).Font.ToEto();
-		}
-
-		public override void SetFont(NSView view, Font font)
-		{
-			((CellView)view).Font = font.ToNS();
+			var field = view.Cell.BetterBackgroundColor = null; 
+			view.TextColor = NSColor.ControlText;
+			view.Font = defaultFont;
 		}
 
 		TextAlignment _textAlignment;
@@ -133,6 +88,8 @@ namespace Eto.Mac.Forms.Cells
 		}
 
 		public AutoSelectMode AutoSelectMode { get; set; }
+
+		public Range<int>? LastSelection => null;
 
 		class CellView : EtoCellTextField
 		{
@@ -172,35 +129,75 @@ namespace Eto.Mac.Forms.Cells
 				};
 
 				var col = Array.IndexOf(tableView.TableColumns(), tableColumn);
+				// The cell view is reused and can outlive the grid, so only reference the handler weakly.
+				view.EditingAborted += (sender, e) =>
+				{
+					var control = (CellView)sender;
+					var colHandler = (control.WeakHandler?.Target as TextBoxCellHandler)?.ColumnHandler;
+					if (colHandler == null)
+						return;
+					var table = colHandler.DataViewHandler?.Table;
+					if (table == null)
+						return;
+					var r = (int)control.Tag;
+					var item = getItem(control.Item, r);
+					var ee = MacConversions.CreateCellEventArgs(colHandler.Widget, table, r, col, item);
+					e.Cancel = colHandler.DataViewHandler?.OnCellEditCancelled(ee) ?? false;
+				};
 				view.BecameFirstResponder += (sender, e) =>
 				{
 					var control = (CellView)sender;
+					var colHandler = (control.WeakHandler?.Target as TextBoxCellHandler)?.ColumnHandler;
+					if (colHandler == null)
+						return;
+					var table = colHandler.DataViewHandler?.Table;
+					if (table == null)
+						return;
 					var r = (int)control.Tag;
 					var item = getItem(control.Item, r);
-					var ee = MacConversions.CreateCellEventArgs(ColumnHandler.Widget, tableView, r, col, item);
-					ColumnHandler.DataViewHandler.OnCellEditing(ee);
+					var ee = MacConversions.CreateCellEventArgs(colHandler.Widget, table, r, col, item);
+					colHandler.DataViewHandler?.OnCellEditing(ee);
 				};
 				view.EditingEnded += (sender, e) =>
 				{
 					var notification = (NSNotification)sender;
 					var control = (CellView)notification.Object;
+					var h = control.WeakHandler?.Target as TextBoxCellHandler;
+					var colHandler = h?.ColumnHandler;
+					if (colHandler == null)
+						return;
+					var table = colHandler.DataViewHandler?.Table;
+					if (table == null)
+						return;
 					var r = (int)control.Tag;
 					var item = getItem(control.Item, r);
-					SetObjectValue(item, control.ObjectValue);
+					h.SetObjectValue(item, control.ObjectValue);
 
-					var ee = MacConversions.CreateCellEventArgs(ColumnHandler.Widget, tableView, r, col, item);
-					ColumnHandler.DataViewHandler.OnCellEdited(ee);
-					control.ObjectValue = GetObjectValue(item) ?? new NSString(string.Empty);
+					var ee = MacConversions.CreateCellEventArgs(colHandler.Widget, table, r, col, item);
+					colHandler.DataViewHandler?.OnCellEdited(ee);
+					control.ObjectValue = h.GetObjectValue(item) ?? new NSString(string.Empty);
 				};
+				bool isResigning = false;
 				view.ResignedFirstResponder += (sender, e) =>
 				{
 					var control = (CellView)sender;
+					var h = control.WeakHandler?.Target as TextBoxCellHandler;
+					var colHandler = h?.ColumnHandler;
+					if (colHandler == null)
+						return;
+					if (isResigning)
+						return;
+					var table = colHandler.DataViewHandler?.Table;
+					if (table == null)
+						return;
+					isResigning = true;
 					var r = (int)control.Tag;
 					var item = getItem(control.Item, r);
-					SetObjectValue(item, control.ObjectValue);
+					h.SetObjectValue(item, control.ObjectValue);
 
-					var ee = MacConversions.CreateCellEventArgs(ColumnHandler.Widget, tableView, r, col, item);
-					ColumnHandler.DataViewHandler.OnCellEdited(ee);
+					var ee = MacConversions.CreateCellEventArgs(colHandler.Widget, table, r, col, item);
+					colHandler.DataViewHandler?.OnCellEdited(ee);
+					isResigning = false;
 				};
 				view.Bind(editableBinding, tableColumn, "editable", null);
 			}
@@ -211,7 +208,8 @@ namespace Eto.Mac.Forms.Cells
 
 			view.Item = obj;
 			view.Tag = row;
-			var args = new MacCellFormatArgs(ColumnHandler.Widget, getItem(obj, row), row, view);
+			SetDefaults(view);
+			var args = new MacGridCellFormatEventArgs(ColumnHandler.Widget, getItem(obj, row), row, view);
 			ColumnHandler.DataViewHandler.OnCellFormatting(args);
 			return view;
 		}

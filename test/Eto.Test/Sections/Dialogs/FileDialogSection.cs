@@ -1,9 +1,3 @@
-using Eto.Drawing;
-using Eto.Forms;
-using System.Collections.Generic;
-using System.Linq;
-using System;
-
 namespace Eto.Test.Sections.Dialogs
 {
 	[Section("Dialogs", "File Dialog")]
@@ -96,12 +90,7 @@ namespace Eto.Test.Sections.Dialogs
 				var dialog = new OpenFileDialog();
 				SetAttributes(dialog);
 				var result = dialog.ShowDialog(ParentWindow);
-				if (result == DialogResult.Ok)
-				{
-					Log.Write(dialog, "Result: {0}, FileName: {1}\nFiles: {2}", result, dialog.FileName, string.Join(", ", dialog.Filenames));
-				}
-				else
-					Log.Write(dialog, "Result: {0}", result);
+				Log.Write(dialog, "Result: {0}, FileName: {1}\nFiles: {2}", result, dialog.FileName, string.Join(", ", dialog.Filenames));
 			};
 			return button;
 		}
@@ -115,23 +104,18 @@ namespace Eto.Test.Sections.Dialogs
 				{
 					Filters =
 					{
-						new FileFilter("All Formats", "png", "jpg", "jpeg", "gif", "tiff"),
+						new FileFilter("All Formats", ".png", ".jpg", ".jpeg", ".gif", ".tiff"),
 						new FileFilter("All Files", "*"),
-						"PNG Files|png",
-						new FileFilter("JPeg Files", "jpg", "jpeg"),
-						new FileFilter("GIF Files", "gif"),
-						new FileFilter("TIFF Files", "tiff"),
+						"PNG Files|.png",
+						new FileFilter("JPeg Files", ".jpg", ".jpeg"),
+						new FileFilter("GIF Files", ".gif"),
+						new FileFilter("TIFF Files", ".tiff"),
 					}
 				};
 				SetAttributes(dialog);
 
 				var result = dialog.ShowDialog(ParentWindow);
-				if (result == DialogResult.Ok)
-				{
-					Log.Write(dialog, "Result: {0}, CurrentFilter: {1}, FileName: {2}\nFiles: {3}", result, dialog.CurrentFilter, dialog.FileName, string.Join(", ", dialog.Filenames));
-				}
-				else
-					Log.Write(dialog, "Result: {0}", result);
+				Log.Write(dialog, "Result: {0}, CurrentFilter: {1}, FileName: {2}\nFiles: {3}", result, dialog.CurrentFilter, dialog.FileName, string.Join(", ", dialog.Filenames));
 			};
 			return button;
 		}
@@ -151,17 +135,14 @@ namespace Eto.Test.Sections.Dialogs
 						new FileFilter("JPeg Files", ".jpg", ".jpeg"),
 						new FileFilter("GIF Files", ".gif"),
 						new FileFilter("TIFF Files", ".tiff"),
+						new FileFilter("CS Files", ".cs"),
 					}
 				};
 				SetAttributes(dialog);
 
 				var result = dialog.ShowDialog(ParentWindow);
-				if (result == DialogResult.Ok)
-				{
-					Log.Write(dialog, "Result: {0}, CurrentFilter: {1}, FileName: {2}", result, dialog.CurrentFilter, dialog.FileName);
-				}
-				else
-					Log.Write(dialog, "Result: {0}", result);
+				Log.Write(dialog, "Result: {0}, CurrentFilter: {1}, FileName: {2}", result, dialog.CurrentFilter, dialog.FileName);
+				dialog.Dispose();
 			};
 			return button;
 		}
@@ -174,12 +155,8 @@ namespace Eto.Test.Sections.Dialogs
 				var dialog = new SaveFileDialog();
 				SetAttributes(dialog);
 				var result = dialog.ShowDialog(ParentWindow);
-				if (result == DialogResult.Ok)
-				{
-					Log.Write(dialog, "Result: {0}, FileName: {1}", result, dialog.FileName);
-				}
-				else
-					Log.Write(dialog, "Result: {0}", result);
+				Log.Write(dialog, "Result: {0}, FileName: {1}", result, dialog.FileName);
+				dialog.Dispose();
 			};
 			return button;
 		}

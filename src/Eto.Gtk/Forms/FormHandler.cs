@@ -1,5 +1,4 @@
-using Eto.Forms;
-using System.Threading.Tasks;
+using Eto.GtkSharp.CustomControls;
 
 namespace Eto.GtkSharp.Forms
 {
@@ -19,7 +18,7 @@ namespace Eto.GtkSharp.Forms
 			Resizable = true;
 			Control.SetPosition(Gtk.WindowPosition.Center);
 
-			var vbox = new EtoVBox { Handler = this };
+			var vbox = new EtoBox(Gtk.Orientation.Vertical, 0) { Handler = this };
 			vbox.PackStart(WindowActionControl, false, true, 0);
 			vbox.PackStart(WindowContentControl, true, true, 0);
 			Control.Child = vbox;
@@ -29,6 +28,8 @@ namespace Eto.GtkSharp.Forms
 		{
 			DisableAutoSizeUpdate++;
 			Control.Child.ShowAll();
+			Control.Realize();
+			Callback.OnLoadComplete(Widget, EventArgs.Empty);
 			if (ShowActivated || !Control.AcceptFocus)
 				Control.Show();
 			else
@@ -55,6 +56,19 @@ namespace Eto.GtkSharp.Forms
 		{
 			get { return Widget.Properties.Get<bool>(CanFocus_Key, true); }
 			set { Widget.Properties.Set(CanFocus_Key, value, () => Control.AcceptFocus = value, true); }
+		}
+
+		public override bool Visible
+		{
+			get => base.Visible;
+			set
+			{
+				base.Visible = value;
+				if (ShowActivated && value)
+				{
+					Focus();
+				}
+			}
 		}
 	}
 }

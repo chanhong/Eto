@@ -1,36 +1,3 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 namespace Eto.Mac.Forms.Menu
 {
 	class ContextHandler : NSMenuDelegate
@@ -65,16 +32,49 @@ namespace Eto.Mac.Forms.Menu
 		}
 	}
 
-	public class ContextMenuHandler : WidgetHandler<EtoMenu, ContextMenu, ContextMenu.ICallback>, ContextMenu.IHandler
+	public class ContextMenuHandler : WidgetHandler<NSMenu, ContextMenu, ContextMenu.ICallback>, ContextMenu.IHandler
 	{
-		protected override EtoMenu CreateControl() => new EtoMenu();
+		protected override NSMenu CreateControl() => new EtoMenu();
+		ContextHandler _delegate;
+
+		public ContextMenuHandler()
+		{
+		}
+
+		public ContextMenuHandler(NSMenu control)
+		{
+			Control = control;
+		}
+		
+		internal static IEnumerable<MenuItem> GetMenuItems(NSMenu menu)
+		{
+			for (nint i = 0; i < menu.Count; i++)
+			{
+				var item = menu.ItemAt(i);
+				
+				if (item.HasSubmenu)
+				{
+					yield return new SubMenuItem(new SubMenuItemHandler(item), GetMenuItems(item.Submenu));
+				}
+				else if (item.IsSeparatorItem)
+				{
+					yield return new SeparatorMenuItem(new SeparatorMenuItemHandler(item));
+				}
+				else
+				{
+					yield return new ButtonMenuItem(new ButtonMenuItemHandler(item));
+				}
+			}
+		}
 
 		protected override void Initialize()
 		{
-			Control.WorksWhenModal = true;
+			if (Control is EtoMenu etoMenu)
+				etoMenu.WorksWhenModal = true;
 			Control.AutoEnablesItems = false;
 			Control.ShowsStateColumn = true;
-			Control.Delegate = new ContextHandler() { Handler = this };
+			if (Control.WeakDelegate == null)
+				Control.Delegate = _delegate = new ContextHandler { Handler = this };
 
 			base.Initialize();
 		}
@@ -110,9 +110,18 @@ namespace Eto.Mac.Forms.Menu
 			Control.RemoveAllItems();
 		}
 
+		public ContextMenuSystemItems IncludeSystemItems
+		{
+			// NSMenu.AllowsContextMenuPlugIns defaults to true, which matches ContextMenuSystemItems.All.
+			// Note All has every bit set, so test against None rather than using HasFlag(All) here.
+			get => Control.AllowsContextMenuPlugIns ? ContextMenuSystemItems.All : ContextMenuSystemItems.None;
+			set => Control.AllowsContextMenuPlugIns = value != ContextMenuSystemItems.None;
+		}
+
 		public void Show(Control relativeTo, PointF? location)
 		{
 			var view = relativeTo?.GetContainerView();
+			MacView.CancelMouseTracking();
 
 			if (location != null || view == null)
 			{
@@ -139,7 +148,7 @@ namespace Eto.Mac.Forms.Menu
 				{
 					var keyWindow = NSApplication.SharedApplication.KeyWindow;
 					var mouseLocation = NSEvent.CurrentMouseLocation;
-					mouseLocation = keyWindow.ConvertScreenToBase(mouseLocation);
+					mouseLocation = keyWindow.ConvertPointFromScreen(mouseLocation);
 
 					var time = DateTime.Now.ToOADate();
 					var windowNumber = keyWindow.WindowNumber;

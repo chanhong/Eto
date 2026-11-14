@@ -2,21 +2,50 @@
   
   <Import Sdk="Microsoft.NET.Sdk" Project="Sdk.props" />
   
-  <Import Project="..\..\build\MSBuildTaskHelper.props" Condition="'$(MSBuildTaskHelpersImported)'!='true'" />
   <Import Project="..\..\src\Eto.Mac\build\Mac.props" Condition="'$(ExcludeRestorePackageImports)' != 'true'" />
   
   <PropertyGroup>
-    <TargetFrameworks>net5.0;net472</TargetFrameworks>
+    <TargetFrameworks>net10.0</TargetFrameworks>
     <OutputType>WinExe</OutputType>
     
-    <RuntimeIdentifiers>osx-x64</RuntimeIdentifiers>
+    <RuntimeIdentifiers>osx-x64;osx-arm64</RuntimeIdentifiers>
+    <DefineConstants>MONOMAC</DefineConstants>
+    
+    <TrimMode>partial</TrimMode>
   </PropertyGroup>
+  
+  <ItemGroup>
+    <TrimmerRootAssembly Include="Eto" />
+    <TrimmerRootAssembly Include="Eto.Test" />
+    <TrimmerRootAssembly Include="Eto.Mac64" />
+    <TrimmerRootAssembly Include="MonoMac" />
+    <TrimmerRootAssembly Include="Portable.Xaml" />
+  </ItemGroup>
 
   <PropertyGroup Condition="$([MSBuild]::IsOsPlatform(OSX)) AND $(Configuration) == 'Release'">
-    <EnableDmgBuild>True</EnableDmgBuild>
+    <MacPackageFormats>dmg;pkg</MacPackageFormats>
     <EnableCodeSigning Condition="$(EnableCodeSignBuild) == 'True' AND $(TargetFramework.StartsWith('net4')) == 'False'">True</EnableCodeSigning>
     <EnableNotarization Condition="$(EnableNotarizationBuild) == 'True' AND $(TargetFramework.StartsWith('net4')) == 'False'">True</EnableNotarization>
   </PropertyGroup>
+  
+  <ItemGroup>
+    <Using Include="MonoMac.AppKit" />
+    <Using Include="MonoMac.Foundation" />
+    <Using Include="MonoMac.CoreGraphics" />
+    <Using Include="MonoMac.ObjCRuntime" />
+    <Using Include="MonoMac.CoreAnimation" />
+    <Using Include="MonoMac.CoreImage" />
+    <Using Include="MonoMac.MobileCoreServices" />
+    <Using Include="MonoMac.CoreFoundation" />
+    <Using Include="MonoMac.ImageIO" />
+    <Using Include="MonoMac.CoreText" />
+    <Using Include="MonoMac.Constants" Alias="Constants" />
+    <Using Include="MonoMac.AppKit.NSRectEdge" Alias="NSRectEdge" />
+    <Using Include="System.Double" Alias="nfloat" />
+    <Using Include="System.Int64" Alias="nint" />
+    <Using Include="System.UInt64" Alias="nuint" />
+    <Using Include="System.IntPtr" Alias="NativeHandle" />
+  </ItemGroup>
   
   <ItemGroup>
     <ProjectReference Include="..\..\src\Eto\Eto.csproj" />
@@ -25,11 +54,7 @@
     <ProjectReference Include="..\..\lib\monomac\src\MonoMac.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="NUnit" Version="3.12.0" />
-	<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0" PrivateAssets="all" />
-  </ItemGroup>
-  <ItemGroup>
-    <Service Include="{82a7f48d-3b50-4b1e-b82e-3ada8210c358}" />
+    <PackageReference Include="NUnit" Version="4.6.1" />
   </ItemGroup>
   
   <ItemGroup>
@@ -43,12 +68,13 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="Assets\TestContent.txt" />
+    <Content Include="EtoIcon.icns" />
   </ItemGroup>
   <ItemGroup>
     <BundleResource Include="Assets\TestBundleResource.txt" />
   </ItemGroup>
-  <Import Sdk="Microsoft.NET.Sdk" Project="Sdk.targets" />
-  
   <Import Project="..\..\src\Eto.Mac\build\Mac.targets" Condition="'$(ExcludeRestorePackageImports)' != 'true'" />
+  
+  <Import Sdk="Microsoft.NET.Sdk" Project="Sdk.targets" />
   
 </Project>

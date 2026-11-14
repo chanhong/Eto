@@ -1,20 +1,12 @@
-using Eto.Forms;
-using Eto.Drawing;
-using Eto.IO;
-using SD = System.Drawing;
-using SWF = System.Windows.Forms;
 using Eto.WinForms.Drawing;
 using Eto.WinForms.Forms;
 using Eto.WinForms.Forms.Printing;
 using Eto.WinForms.Forms.Controls;
-using Eto.WinForms.IO;
 using Eto.Forms.ThemedControls;
 using Eto.WinForms.Forms.Cells;
 using Eto.WinForms.Forms.Menu;
 using Eto.WinForms.Forms.ToolBar;
 using Eto.Shared.Forms;
-using System.Diagnostics;
-
 namespace Eto.WinForms
 {
 	public class Platform : Eto.Platform
@@ -26,7 +18,9 @@ namespace Eto.WinForms
 		public override string ID => "WinForms";
 
 		public override PlatformFeatures SupportedFeatures =>
-			PlatformFeatures.DrawableWithTransparentContent;
+			PlatformFeatures.DrawableWithTransparentContent
+			| PlatformFeatures.MultiThreadedUI
+			| PlatformFeatures.Mnemonics;
 
 		static Platform()
 		{
@@ -46,6 +40,7 @@ namespace Eto.WinForms
 			// Drawing
 			p.Add<Bitmap.IHandler>(() => new BitmapHandler());
 			p.Add<FontFamily.IHandler>(() => new FontFamilyHandler());
+			p.Add<FontTypeface.IHandler>(() => new FontTypefaceHandler());
 			p.Add<Font.IHandler>(() => new FontHandler());
 			p.Add<Fonts.IHandler>(() => new FontsHandler());
 			p.Add<Graphics.IHandler>(() => new GraphicsHandler());
@@ -120,6 +115,13 @@ namespace Eto.WinForms
 			p.Add<ToggleButton.IHandler>(() => new ToggleButtonHandler());
 			p.Add<PropertyGrid.IHandler>(() => new ThemedPropertyGridHandler());
 			p.Add<CollectionEditor.IHandler>(() => new ThemedCollectionEditorHandler());
+			p.Add<NativeControlHost.IHandler>(() => new NativeControlHandler());
+
+			// Forms.Gestures
+			p.Add<MagnificationGesture.IHandler>(() => new MagnificationGestureHandler());
+			p.Add<RotationGesture.IHandler>(() => new RotationGestureHandler());
+			p.Add<PanGesture.IHandler>(() => new PanGestureHandler());
+			p.Add<ScrollGesture.IHandler>(() => new ScrollGestureHandler());
 
 			// Forms.Menu
 			p.Add<CheckMenuItem.IHandler>(() => new CheckMenuItemHandler());
@@ -132,6 +134,7 @@ namespace Eto.WinForms
 			
 			// Forms.Printing
 			p.Add<PrintDialog.IHandler>(() => new PrintDialogHandler());
+			p.Add<PrintPreviewDialog.IHandler>(() => new PrintPreviewDialogHandler());
 			p.Add<PrintDocument.IHandler>(() => new PrintDocumentHandler());
 			p.Add<PrintSettings.IHandler>(() => new PrintSettingsHandler());
 			
@@ -140,6 +143,7 @@ namespace Eto.WinForms
 			p.Add<RadioToolItem.IHandler>(() => new RadioToolItemHandler());
 			p.Add<SeparatorToolItem.IHandler>(() => new SeparatorToolBarItemHandler());
 			p.Add<ButtonToolItem.IHandler>(() => new ButtonToolItemHandler());
+			p.Add<DropDownToolItem.IHandler>(() => new DropDownToolItemHandler());
 			p.Add<ToolBar.IHandler>(() => new ToolBarHandler());
 			
 			// Forms
@@ -170,13 +174,20 @@ namespace Eto.WinForms
 			p.Add<TrayIndicator.IHandler>(() => new TrayIndicatorHandler());
 			p.Add<Notification.IHandler>(() => new NotificationHandler());
 			p.Add<DataObject.IHandler>(() => new DataObjectHandler());
+			p.Add<DataFormats.IHandler>(() => new DataFormatsHandler());
 			p.Add<Taskbar.IHandler>(() => new TaskbarHandler());
+			p.Add<Window.IWindowHandler>(() => new WindowHandler());
 
 			// IO
 			p.Add<SystemIcons.IHandler>(() => new SystemIconsHandler());
-			
+
 			// General
 			p.Add<EtoEnvironment.IHandler>(() => new EtoEnvironmentHandler());
+
+#if NET9_0_OR_GREATER
+			p.Add<Theme.IHandler>(() => throw new InvalidOperationException());
+			p.Add<Themes.IHandler>(() => new ThemesHandler());
+#endif
 		}
 
 		/// <summary>
@@ -197,23 +208,17 @@ namespace Eto.WinForms
 
 		private WebView.IHandler Create_WebView2()
 		{
-#if NET45
-			Debug.WriteLine("Warning: .NET 4.5 target cannot use WebView2.  Target at least .NET 4.6.2, .NET Core, or .NET 5 instead and install the Microsoft.Web.WebView2 nuget package. Falling back to the Windows Forms WebView.");
-			UseSwfWebView();
-			return new WebViewHandler();
-#else
 			try
 			{
 				return WebView2Loader.Create();
 			}
 			catch
 			{
-				Debug.WriteLine("Warning: Could not create WebView2 handler. Add Microsoft.Web.WebView2 nuget package to your project to take advantage of the latest web control.");
+				Trace.WriteLine("Warning: Could not create WebView2 handler. Add Microsoft.Web.WebView2 nuget package to your project to take advantage of the latest web control.");
 				// switch to SWF version for subsequent controls
 				UseSwfWebView();
 				return new WebViewHandler();
 			}
-#endif
 		}
 	}
 }

@@ -1,14 +1,10 @@
-using System;
-using System.Collections.Generic;
-using Eto.Forms;
-
 namespace Eto.GtkSharp.Forms.Controls
 {
 	public class FilePickerHandler : GtkControl<Gtk.EventBox, FilePicker, FilePicker.ICallback>, FilePicker.IHandler
 	{
 		FileAction action;
 		Gtk.FileChooserButton filebutton;
-		Gtk.HBox savebox;
+		Gtk.Box savebox;
 		Gtk.Entry saveentry;
 		Gtk.Button savebutton;
 
@@ -21,7 +17,7 @@ namespace Eto.GtkSharp.Forms.Controls
 
 			// Save is not a valid option for FileChooserButton, therefore
 			// we need to create our own, or use the ThemedFilePickerHandler
-			savebox = new Gtk.HBox();
+			savebox = new Gtk.Box(Gtk.Orientation.Horizontal, 0);
 			saveentry = new Gtk.Entry();
 			savebox.PackStart(saveentry, true, true, 0);
 			savebutton = new Gtk.Button();
@@ -59,11 +55,14 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		private void Savebutton_Clicked(object sender, EventArgs e)
 		{
+#if GTKCORE
+			var savedialog = new Gtk.FileChooserNative(string.Empty, null, Gtk.FileChooserAction.Save, null, null);
+#else
 			var savedialog = new Gtk.FileChooserDialog(string.Empty, null, Gtk.FileChooserAction.Save);
-			savedialog.DoOverwriteConfirmation = true;
 			savedialog.AddButton(Gtk.Stock.Cancel, Gtk.ResponseType.Cancel);
 			savedialog.AddButton(Gtk.Stock.Save, Gtk.ResponseType.Ok);
-			savedialog.DefaultResponse = Gtk.ResponseType.Ok;
+#endif
+			savedialog.DoOverwriteConfirmation = true;
 
 			savedialog.Title = filebutton.Title;
 			foreach (var filter in filebutton.Filters)
@@ -72,7 +71,10 @@ namespace Eto.GtkSharp.Forms.Controls
 
 			var result = savedialog.Run();
 			savedialog.Hide();
+#if !GTKCORE
 			savedialog.Unrealize();
+#endif
+			
 
 			if (result == (int)Gtk.ResponseType.Ok)
 				saveentry.Text = savedialog.Filename;

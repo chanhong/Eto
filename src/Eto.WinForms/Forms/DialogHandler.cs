@@ -1,10 +1,3 @@
-using sd = System.Drawing;
-using swf = System.Windows.Forms;
-using Eto.Forms;
-using System;
-using System.Threading.Tasks;
-using Eto.Drawing;
-
 namespace Eto.WinForms.Forms
 {
     public class DialogHandler : WindowHandler<swf.Form, Dialog, Dialog.ICallback>, Dialog.IHandler
@@ -79,6 +72,9 @@ namespace Eto.WinForms.Forms
 		public void ShowModal()
         {
             ReloadButtons();
+			var owner = Widget.Owner;
+			if (owner != null && !owner.HasFocus)
+				owner.Focus();
 
             Control.ShowDialog();
 			Control.Owner = null; // without this, the dialog is still active as part of the owner form
@@ -107,8 +103,12 @@ namespace Eto.WinForms.Forms
 			var tcs = new TaskCompletionSource<bool>();
 			Application.Instance.AsyncInvoke(() =>
 			{
+				if (Widget.IsDisposed)
+				{
+					tcs.SetResult(false);
+					return;
+				}
 				ShowModal();
-
 				tcs.SetResult(true);
 			});
 			return tcs.Task;

@@ -1,7 +1,3 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-
 namespace Eto.GtkSharp.Forms.Controls
 {
 	public class ButtonHandler : ButtonHandler<Gtk.Button, Button, Button.ICallback>
@@ -32,6 +28,7 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		internal static readonly object Image_Key = new object();
 		internal static readonly object ImagePosition_Key = new object();
+		internal static readonly object ImageNextToText_Key = new object();
 		internal static readonly object MinimumSize_Key = new object();
 
 		protected override Gtk.Button CreateControl() => new EtoButton { Handler = this };

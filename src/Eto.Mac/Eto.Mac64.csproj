@@ -1,18 +1,19 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;net45</TargetFrameworks>
+    <TargetFrameworks Condition="$(TargetFrameworkOverride) == ''">netstandard2.0;net6.0;net8.0;net10.0</TargetFrameworks>
+    <TargetFrameworks Condition="$(TargetFrameworkOverride) != ''">$(TargetFrameworkOverride)</TargetFrameworks>
     <RootNamespace>Eto.Mac</RootNamespace>
     <DefineConstants>$(DefineConstants);OSX;DESKTOP;MONOMAC;Mac64</DefineConstants>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <DefaultItemExcludes>build\*</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);build\*</DefaultItemExcludes>
     <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
-
+    <TreatWarningsAsErrors Condition="$(Configuration) == 'Release'">true</TreatWarningsAsErrors>
   </PropertyGroup>
   <PropertyGroup>
     <PackageId>Eto.Platform.Mac64</PackageId>
     <Title>Eto.Forms - MonoMac 64-bit Platform</Title>
-    <Description>OS X Platform for the Eto.Forms UI Framework using the open-source MonoMac with 64-bit mono</Description>
+    <Description>OS X Platform for the Eto.Forms UI Framework using the open-source MonoMac</Description>
     <PackageTags>cross platform gui ui framework desktop monomac osx mac eto.forms</PackageTags>
     <PackageDescription>
 This is the 64-bit MonoMac platform for Eto.Forms UI Framework.
@@ -21,17 +22,34 @@ Eto.Platform.Mac64 uses a modified version of the open source MonoMac for 64-bit
       
 This package creates an .app bundle to run your app on macOS, even on Windows or Linux.
       
-By default, the mono or .NET Core runtime will be bundled in Release configuration so your app won't require extra dependencies. To bundle mono, it must be installed on the development machine.
+By default, the .NET Core runtime will be bundled in Release configuration so your app won't require extra dependencies.
 
-Use Eto.Platform.XamMac2 if you want to distribute your app to the Mac App Store, though it requires VS for Mac.
+Use Eto.Platform.macOS if you want to distribute your app to the Mac App Store.
 
 You do not need to use any of the classes of this assembly (unless customizing the MonoMac functionality of the platform), and should just use the UI controls from the Eto assembly.
     </PackageDescription>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="..\Shared\PlatformDetect.cs">
-      <Link>PlatformDetect.cs</Link>
-    </Compile>
+    <Using Include="MonoMac.AppKit" />
+    <Using Include="MonoMac.Foundation" />
+    <Using Include="MonoMac.CoreGraphics" />
+    <Using Include="MonoMac.ObjCRuntime" />
+    <Using Include="MonoMac.CoreAnimation" />
+    <Using Include="MonoMac.CoreImage" />
+    <Using Include="MonoMac.MobileCoreServices" />
+    <Using Include="MonoMac.CoreFoundation" />
+    <Using Include="MonoMac.ImageIO" />
+    <Using Include="MonoMac.CoreText" />
+    <Using Include="MonoMac.Constants" Alias="Constants" />
+    <Using Include="MonoMac.AppKit.NSRectEdge" Alias="NSRectEdge" />
+    <Using Include="System.Double" Alias="nfloat" />
+    <Using Include="System.Int64" Alias="nint" />
+    <Using Include="System.UInt64" Alias="nuint" />
+    <Using Include="System.IntPtr" Alias="NativeHandle" />
+    <Using Include="System.Drawing" Alias="sd" />
+  </ItemGroup>
+  
+  <ItemGroup>
     <Compile Include="..\Shared\FixedMaskedTextProviderHandler.cs">
       <Link>Forms\FixedMaskedTextProviderHandler.cs</Link>
     </Compile>
@@ -41,15 +59,14 @@ You do not need to use any of the classes of this assembly (unless customizing t
     <Compile Include="..\Shared\MutableCellEventArgs.cs">
       <Link>Forms\Cells\MutableCellEventArgs.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\WebViewHtmlServer.cs">
+      <Link>Forms\Controls\WebViewHtmlServer.cs</Link>
+    </Compile>
     <Compile Include="..\Shared\BaseBitmapData.cs">
       <Link>Drawing\BaseBitmapData.cs</Link>
     </Compile>
   </ItemGroup>
   
-  <ItemGroup>
-	<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0" PrivateAssets="all" />
-  </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Eto\Eto.csproj" />
     <ProjectReference Include="..\..\lib\monomac\src\MonoMac.csproj" PrivateAssets="all" Pack="True" />
@@ -63,8 +80,6 @@ You do not need to use any of the classes of this assembly (unless customizing t
     <None Include="build\*" Exclude="build\Mac.*" Pack="True" PackagePath="build" />
     <None Include="build\Mac.targets" Pack="True" PackagePath="build\$(PackageId).targets" />
     <None Include="build\Mac.props" Pack="True" PackagePath="build\$(PackageId).props" />
-    
-    <None Include="..\..\build\MSBuildTaskHelper.props" Pack="True" PackagePath="build" />
   </ItemGroup>
   
   <Target Name="CopyProjectReferencesToPackage" DependsOnTargets="ResolveReferences">

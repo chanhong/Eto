@@ -1,13 +1,10 @@
-﻿using System;
-using Eto.Drawing;
-using Eto.Forms;
-
-namespace Eto.Test.Sections.Controls
+﻿namespace Eto.Test.Sections.Controls
 {
 	[Section("Controls", typeof(TabControl))]
 	public class TabControlSection : Panel
 	{
 		TabControl tabControl;
+		StackLayout visibilityLayout;
 
 		protected override void OnPreLoad(EventArgs e)
 		{
@@ -18,6 +15,8 @@ namespace Eto.Test.Sections.Controls
 		public virtual Control Create()
 		{
 			tabControl = DefaultTabs();
+			visibilityLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, VerticalContentAlignment = VerticalAlignment.Center };
+			UpdateVisibility();
 
 			return new StackLayout
 			{
@@ -29,6 +28,11 @@ namespace Eto.Test.Sections.Controls
 					{
 						Orientation = Orientation.Horizontal,
 						Items = { null, AddTab(), RemoveTab(), ClearTabs(), SelectTab(), TabPositionControl(), null }
+					},
+					new StackLayout
+					{
+						Orientation = Orientation.Horizontal,
+						Items = { null, visibilityLayout, null }
 					},
 					new StackLayoutItem(tabControl, expand: true)
 				}
@@ -48,6 +52,7 @@ namespace Eto.Test.Sections.Controls
 				LogEvents(tab);
 
 				tabControl.Pages.Add(tab);
+				UpdateVisibility();
 			};
 			return control;
 		}
@@ -60,6 +65,7 @@ namespace Eto.Test.Sections.Controls
 				if (tabControl.SelectedIndex >= 0 && tabControl.Pages.Count > 0)
 				{
 					tabControl.Pages.RemoveAt(tabControl.SelectedIndex);
+					UpdateVisibility();
 				}
 			};
 			return control;
@@ -71,6 +77,7 @@ namespace Eto.Test.Sections.Controls
 			control.Click += (s, e) =>
 			{
 				tabControl.Pages.Clear();
+				UpdateVisibility();
 			};
 			return control;
 		}
@@ -87,6 +94,19 @@ namespace Eto.Test.Sections.Controls
 				}
 			};
 			return control;
+		}
+
+		void UpdateVisibility()
+		{
+			visibilityLayout.Items.Clear();
+			visibilityLayout.Items.Add(new Label { Text = "Visible:" });
+			for (int i = 0; i < tabControl.Pages.Count; i++)
+			{
+				var page = tabControl.Pages[i];
+				var checkBox = new CheckBox { Text = string.IsNullOrEmpty(page.Text) ? $"Tab {i + 1}" : page.Text, Checked = page.Visible };
+				checkBox.CheckedChanged += (sender, e) => page.Visible = checkBox.Checked == true;
+				visibilityLayout.Items.Add(checkBox);
+			}
 		}
 
 		Control TabPositionControl()
@@ -106,7 +126,7 @@ namespace Eto.Test.Sections.Controls
 			control.Pages.Add(new TabPage
 			{
 				Text = "Tab 2",
-				Image = TestIcons.TestIcon.WithSize(16, 16),
+				Image = TestIcons.TestIcon.WithSize(32, 32),
 				Content = TabTwo()
 			});
 

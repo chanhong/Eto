@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;netstandard1.0</TargetFrameworks>
-    <DefineConstants>$(DefineConstants);PCL;PORTABLE</DefineConstants>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
+    <DefineConstants>$(DefineConstants);PORTABLE</DefineConstants>
   </PropertyGroup>
   
   <PropertyGroup>
@@ -12,14 +12,13 @@
     <PackageDescription>
 Eto.Xaml allows you to load xaml UI definitions for the Eto.Forms framework
 
-To get more information about how to get started, read the wiki:
+To get more information about how to get started, read the documentation:
 
-https://github.com/picoe/Eto/wiki
+https://eto.picoe.ca
     </PackageDescription>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Eto\TypeHelper.cs" />
     <None Remove="Eto.Serialization.Xaml.targets" />
     <None Include="Eto.Serialization.Xaml.targets" Pack="true" PackagePath="build" />
   </ItemGroup>
@@ -28,11 +27,30 @@ https://github.com/picoe/Eto/wiki
     <ProjectReference Include="..\Eto\Eto.csproj" />
   </ItemGroup>
   
-  <ItemGroup>
-    <PackageReference Include="Portable.Xaml" Version="0.26.0" />
+  <!-- ship the .xeto source generator, with the assemblies it loads, in the package's analyzers folder.
+       Built only when packing (not a ProjectReference) so consumers' solutions needn't include the generator. -->
+  <PropertyGroup>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);IncludeXamlGeneratorInPackage</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+  <Target Name="IncludeXamlGeneratorInPackage">
+    <!-- the extra property forces a fresh evaluation, so Build sees the restore's output -->
+    <MSBuild Projects="..\Eto.Serialization.Xaml.Generator\Eto.Serialization.Xaml.Generator.csproj" Targets="Restore" Properties="Configuration=$(Configuration);_XamlGeneratorRestore=true" RemoveProperties="TargetFramework" />
+    <MSBuild Projects="..\Eto.Serialization.Xaml.Generator\Eto.Serialization.Xaml.Generator.csproj" Targets="Build" Properties="Configuration=$(Configuration)" RemoveProperties="TargetFramework" />
+    <!-- GetTargetPath also returns the Portable.Xaml dependencies the generator needs beside it -->
+    <MSBuild Projects="..\Eto.Serialization.Xaml.Generator\Eto.Serialization.Xaml.Generator.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)" RemoveProperties="TargetFramework">
+      <Output TaskParameter="TargetOutputs" ItemName="_XamlGeneratorFile" />
+    </MSBuild>
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="@(_XamlGeneratorFile)" PackagePath="analyzers/dotnet/cs" />
+    </ItemGroup>
+  </Target>
+
+  <!-- set PortableXamlPath to a Portable.Xaml checkout to build against its source -->
+  <ItemGroup Condition="'$(PortableXamlPath)' == ''">
+    <PackageReference Include="Portable.Xaml" Version="0.31.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(PortableXamlPath)' != ''">
+    <ProjectReference Include="$(PortableXamlPath)src\Portable.Xaml\Portable.Xaml.csproj" />
   </ItemGroup>
   
-  <ItemGroup Condition="$(TargetFramework) == 'netstandard1.0'">
-    <PackageReference Include="System.ComponentModel.TypeConverter" Version="4.3.0" />
-  </ItemGroup>
 </Project>

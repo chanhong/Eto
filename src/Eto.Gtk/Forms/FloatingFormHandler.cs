@@ -1,6 +1,3 @@
-using Eto.Forms;
-using System;
-
 namespace Eto.GtkSharp.Forms
 {
 	public class FloatingFormHandler : FormHandler, FloatingForm.IHandler
@@ -18,15 +15,15 @@ namespace Eto.GtkSharp.Forms
 		public override void OnLoad(EventArgs e)
 		{
 			base.OnLoad(e);
-			ApplicationHandler.Instance.IsActiveChanged += Application_IsActiveChanged;
-			if (!ApplicationHandler.Instance.IsActive)
+			Application.Instance.IsActiveChanged += Application_IsActiveChanged;
+			if (!Application.Instance.IsActive)
 				base.Visible = false;
 		}
 
 		public override void OnUnLoad(EventArgs e)
 		{
 			base.OnUnLoad(e);
-			ApplicationHandler.Instance.IsActiveChanged -= Application_IsActiveChanged;
+			Application.Instance.IsActiveChanged -= Application_IsActiveChanged;
 		}
 
 		private void Application_IsActiveChanged(object sender, EventArgs e)
@@ -34,7 +31,7 @@ namespace Eto.GtkSharp.Forms
 			var lastAcceptFocus = Control.AcceptFocus;
 			Control.AcceptFocus = false;
 
-			base.Visible = ApplicationHandler.Instance.IsActive && _visible;
+			base.Visible = Application.Instance.IsActive && _visible;
 			Control.AcceptFocus = lastAcceptFocus;
 		}
 
@@ -42,11 +39,13 @@ namespace Eto.GtkSharp.Forms
 
 		public override bool Visible
 		{
-			get => _visible;
+			// the form hides itself natively when the application isn't active, so report the
+			// requested visibility in that case - but only once it has actually been shown.
+			get => (!Application.Instance.IsActive && _visible && Widget.Loaded) || base.Visible;
 			set
 			{
 				_visible = value;
-				if (ApplicationHandler.Instance.IsActive)
+				if (Application.Instance.IsActive)
 					base.Visible = value;
 			}
 		}

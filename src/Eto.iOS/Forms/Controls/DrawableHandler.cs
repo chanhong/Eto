@@ -1,7 +1,4 @@
-using System;
 using SD = System.Drawing;
-using Eto.Drawing;
-using Eto.Forms;
 using Eto.iOS.Drawing;
 using UIKit;
 using CoreAnimation;
@@ -130,6 +127,14 @@ namespace Eto.iOS.Forms.Controls
 					Callback.OnPaint(Widget, new PaintEventArgs(graphics, rect));
 				}
 			}
+		}
+
+		public void CancelTextComposition()
+		{
+		}
+
+		public void CommitTextComposition()
+		{
 		}
 	}
 }

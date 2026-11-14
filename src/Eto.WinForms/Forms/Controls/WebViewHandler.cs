@@ -1,14 +1,5 @@
-using System;
-using System.Linq;
 using SHDocVw;
-using swf = System.Windows.Forms;
-using Eto.Forms;
 using Eto.CustomControls;
-using System.Runtime.InteropServices;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using Eto.Drawing;
-
 namespace Eto.WinForms.Forms.Controls
 {
 	public class WebViewHandler : WindowsControl<swf.WebBrowser, WebView, WebView.ICallback>, WebView.IHandler
@@ -224,6 +215,14 @@ namespace Eto.WinForms.Forms.Controls
 		public void ShowPrintDialog()
 		{
 			Control.ShowPrintDialog();
+		}
+
+		public bool SupportsResourceHandlers => false;
+
+		public Uri AddResourceHandler(string host, Func<WebViewResourceRequest, WebViewResourceResponse> handler) => null;
+
+		public void RemoveResourceHandler(string host)
+		{
 		}
 
 		public bool BrowserContextMenuEnabled

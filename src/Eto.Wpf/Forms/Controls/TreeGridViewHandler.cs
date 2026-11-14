@@ -1,16 +1,5 @@
-using System;
-using swc = System.Windows.Controls;
-using sw = System.Windows;
-using swd = System.Windows.Data;
-using swm = System.Windows.Media;
-using swi = System.Windows.Input;
-using Eto.Forms;
 using Eto.CustomControls;
 using Eto.Wpf.CustomControls.TreeGridView;
-using Eto.Drawing;
-using System.Collections.Generic;
-using System.Linq;
-
 namespace Eto.Wpf.Forms.Controls
 {
 	public class TreeGridViewHandler : GridHandler<TreeGridView, TreeGridView.ICallback>, TreeGridView.IHandler, ITreeHandler
@@ -27,13 +16,12 @@ namespace Eto.Wpf.Forms.Controls
 		{
 			base.Initialize();
 			controller = new TreeController { Handler = this };
-			Control.Background = sw.SystemColors.WindowBrush;
 			Control.PreviewKeyDown += Control_PreviewKeyDown;
 		}
 
 		private void Control_PreviewKeyDown(object sender, sw.Input.KeyEventArgs e)
 		{
-			if (e.Handled || swi.Keyboard.Modifiers != swi.ModifierKeys.None)
+			if (e.Handled || swi.Keyboard.Modifiers != swi.ModifierKeys.None || IsEditing)
 				return;
 
 			// handle expanding/collapsing via the keyboard
@@ -159,8 +147,15 @@ namespace Eto.Wpf.Forms.Controls
 			get { return controller.Store; }
 			set
 			{
+				if (Control.ItemsSource is EtoGridCollectionView collectionView)
+				{
+					collectionView.Unregister();
+					Control.ItemsSource = null;
+				}
+
 				controller.InitializeItems(value);
-				Control.ItemsSource = controller;
+
+				Control.ItemsSource = EtoGridCollectionView.Create(controller, Control);
 				EnsureSelection();
 			}
 		}
@@ -174,7 +169,7 @@ namespace Eto.Wpf.Forms.Controls
 				{
 					controller.ExpandToItem(value);
 					Control.SelectedItem = value;
-					Control.ScrollIntoView(value);
+					Control.ScrollIntoViewWithoutParents(() => Control.ScrollIntoView(value));
 				}
 				else
 					Control.UnselectAll();
@@ -200,13 +195,16 @@ namespace Eto.Wpf.Forms.Controls
 			return new TreeTogglePanel(defaultContent, controller);
 		}
 
-		void ITreeHandler.PreResetTree()
+		bool ITreeHandler.PreResetTree(object item, int row)
 		{
+			if (item != null && Control.CurrentItem != item)
+				return false;
 			SkipSelectionChanged = true;
 			SaveFocus();
+			return true;
 		}
 
-		void ITreeHandler.PostResetTree()
+		void ITreeHandler.PostResetTree(object item, int row)
 		{
 			DisableAutoScrollToSelection = true;
 			RestoreFocus();
@@ -227,24 +225,10 @@ namespace Eto.Wpf.Forms.Controls
 				controller.ReloadData();
 		}
 
-		public ITreeGridItem GetCellAt(PointF location, out int column)
+		public TreeGridCell GetCellAt(PointF location)
 		{
-			var hitTestResult = swm.VisualTreeHelper.HitTest(Control, location.ToWpf())?.VisualHit;
-			if (hitTestResult == null)
-			{
-				column = -1;
-				return null;
-			}
-			var dataGridCell = hitTestResult.GetVisualParent<swc.DataGridCell>();
-			column = dataGridCell?.Column != null ? Control.Columns.IndexOf(dataGridCell.Column) : -1;
-
-			var dataGridRow = hitTestResult.GetVisualParent<swc.DataGridRow>();
-			if (dataGridRow != null)
-			{
-				int row = dataGridRow.GetIndex();
-				return GetItemAtRow(row) as ITreeGridItem;
-			}
-			return null;
+			var info = GetCellInfo(location);
+			return new TreeGridCell(info.Column, info.ColumnIndex, info.CellType, info.Item);
 		}
 
 		public TreeGridViewDragInfo GetDragInfo(DragEventArgs args) => args.ControlObject as TreeGridViewDragInfo;
@@ -265,7 +249,7 @@ namespace Eto.Wpf.Forms.Controls
 				{
 					position = GridDragPosition.After;
 					var treeGridItem = item as ITreeGridItem;
-					if (treeGridItem?.Expanded == true)
+					if (treeGridItem?.Expandable == true && treeGridItem?.Expanded == true)
 					{
 						// insert as a child of the parent
 						parent = item;

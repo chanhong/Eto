@@ -1,6 +1,4 @@
-using System;
 using NUnit.Framework;
-using Eto.Forms;
 namespace Eto.Test.UnitTests.Forms.Controls
 {
 	[TestFixture]
@@ -23,35 +21,35 @@ namespace Eto.Test.UnitTests.Forms.Controls
 			else
 				dropDown.SelectedValue = item2;
 
-			Assert.AreEqual(1, dropDown.SelectedIndex);
-			Assert.AreEqual(item2, dropDown.SelectedValue);
-			Assert.AreEqual(1, selectedIndexChanged);
-			Assert.AreEqual(1, selectedValueChanged);
-			Assert.AreEqual(1, selectedKeyChanged);
+			Assert.That(dropDown.SelectedIndex, Is.EqualTo(1));
+			Assert.That(dropDown.SelectedValue, Is.EqualTo(item2));
+			Assert.That(selectedIndexChanged, Is.EqualTo(1));
+			Assert.That(selectedValueChanged, Is.EqualTo(1));
+			Assert.That(selectedKeyChanged, Is.EqualTo(1));
 
 			// change the list
 			dropDown.DataStore = new[] { item1, item3, item2 };
-			Assert.AreEqual(2, dropDown.SelectedIndex);
-			Assert.AreEqual(item2, dropDown.SelectedValue);
-			Assert.AreEqual(2, selectedIndexChanged);
-			Assert.AreEqual(1, selectedValueChanged);
-			Assert.AreEqual(1, selectedKeyChanged);
+			Assert.That(dropDown.SelectedIndex, Is.EqualTo(2));
+			Assert.That(dropDown.SelectedValue, Is.EqualTo(item2));
+			Assert.That(selectedIndexChanged, Is.EqualTo(2));
+			Assert.That(selectedValueChanged, Is.EqualTo(1));
+			Assert.That(selectedKeyChanged, Is.EqualTo(1));
 
 			// change again, but selected value does not exist
 			dropDown.DataStore = new[] { item1, item3 };
-			Assert.AreEqual(-1, dropDown.SelectedIndex);
-			Assert.IsNull(dropDown.SelectedValue);
-			Assert.AreEqual(3, selectedIndexChanged);
-			Assert.AreEqual(2, selectedValueChanged);
-			Assert.AreEqual(2, selectedKeyChanged);
+			Assert.That(dropDown.SelectedIndex, Is.EqualTo(-1));
+			Assert.That(dropDown.SelectedValue, Is.Null);
+			Assert.That(selectedIndexChanged, Is.EqualTo(3));
+			Assert.That(selectedValueChanged, Is.EqualTo(2));
+			Assert.That(selectedKeyChanged, Is.EqualTo(2));
 
 			// add it back, still should not be selected now that it was deselected!
 			dropDown.DataStore = new[] { item2, item1, item3 };
-			Assert.AreEqual(-1, dropDown.SelectedIndex);
-			Assert.IsNull(dropDown.SelectedValue);
-			Assert.AreEqual(3, selectedIndexChanged);
-			Assert.AreEqual(2, selectedValueChanged);
-			Assert.AreEqual(2, selectedKeyChanged);
+			Assert.That(dropDown.SelectedIndex, Is.EqualTo(-1));
+			Assert.That(dropDown.SelectedValue, Is.Null);
+			Assert.That(selectedIndexChanged, Is.EqualTo(3));
+			Assert.That(selectedValueChanged, Is.EqualTo(2));
+			Assert.That(selectedKeyChanged, Is.EqualTo(2));
 		}
 
 		[Test]
@@ -118,11 +116,11 @@ namespace Eto.Test.UnitTests.Forms.Controls
 				dropDown.DataStore = items;
 				dropDown.SelectedIndex = 1;
 				// sanity check
-				Assert.AreEqual(items[1], dropDown.SelectedValue, "#1");
+				Assert.That(dropDown.SelectedValue, Is.EqualTo(items[1]), "#1");
 
 				dropDown.DataStore = null;
-				Assert.AreEqual(-1, dropDown.SelectedIndex, "#2.1");
-				Assert.IsNull(dropDown.SelectedValue, "#2.2");
+				Assert.That(dropDown.SelectedIndex, Is.EqualTo(-1), "#2.1");
+				Assert.That(dropDown.SelectedValue, Is.Null, "#2.2");
 			});
 		}
 
@@ -140,6 +138,52 @@ namespace Eto.Test.UnitTests.Forms.Controls
 						null
 					}
 				};
+			});
+		}
+
+		[Test]
+		public void SelectedIndexShouldOnlyFireIfIndexChanges()
+		{
+			var list = new List<string> { "aaa", "bbb", "ccc" };
+			var selectedIndexChangedCount = 0;
+			Shown(form =>
+			{
+				var dropDown = new DropDown();
+				dropDown.SelectedIndexChanged += (sender, e) => selectedIndexChangedCount++;
+				dropDown.DataStore = list;
+				dropDown.SelectedIndex = 1;
+				Assert.That(selectedIndexChangedCount, Is.EqualTo(1), "#1");
+				
+				form.Content = dropDown;
+				return dropDown;
+			}, dropDown =>
+			{
+				Assert.That(dropDown.SelectedIndex, Is.EqualTo(1), "#2.1");
+				Assert.That(dropDown.SelectedValue, Is.EqualTo("bbb"), "#2.2");
+				Assert.That(selectedIndexChangedCount, Is.EqualTo(1), "#2.3");
+				
+				// set to same list instance, should not fire a changed event
+				dropDown.DataStore = list;
+				Assert.That(dropDown.SelectedIndex, Is.EqualTo(1), "#3.1");
+				Assert.That(dropDown.SelectedValue, Is.EqualTo("bbb"), "#3.2");
+				Assert.That(selectedIndexChangedCount, Is.EqualTo(1), "#3.3");
+				
+				// set to new list instance with same index for selected item, should not fire a changed event
+				list = new List<string>(list);
+				list.Add("ddd");
+				Assert.That(dropDown.SelectedIndex, Is.EqualTo(1), "#4.1");
+				Assert.That(dropDown.SelectedValue, Is.EqualTo("bbb"), "#4.2");
+				Assert.That(selectedIndexChangedCount, Is.EqualTo(1), "#4.3");
+				
+				// create a copy and insert to make the index differnet, should now fire a changed event
+				list = new List<string>(list);
+				list.Insert(0, "ddd");
+				dropDown.DataStore = list;
+				
+				// now we should get a change event, since the index of the previously selected item is now different.
+				Assert.That(dropDown.SelectedIndex, Is.EqualTo(2), "#5.1");
+				Assert.That(dropDown.SelectedValue, Is.EqualTo("bbb"), "#5.2");
+				Assert.That(selectedIndexChangedCount, Is.EqualTo(2), "#5.3");
 			});
 		}
 

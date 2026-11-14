@@ -1,30 +1,125 @@
-using System;
-using System.IO;
 using Newtonsoft.Json;
-using System.Runtime.Serialization;
-using System.Reflection;
 using Eto.Serialization.Json.Converters;
+using System.Runtime.CompilerServices;
 
 namespace Eto.Serialization.Json
 {
 	public static class JsonReader
 	{
+		static readonly Dictionary<Type, string> hotReloadFilePaths = new();
+
+		static IEnumerable<string> GetTypeFiles(Type type)
+		{
+			yield return type.FullName + ".jeto";
+			yield return type.FullName + ".json";
+			yield return type.Name + ".jeto"; // for F#/VB.NET projects
+		}
+		
 		static Stream GetStream(Type type)
 		{
-			return
-				GetStream(type, type.FullName + ".jeto")
-				?? GetStream(type, type.FullName + ".json")
-				?? GetStream(type, type.Name + ".jeto") // for f# projects
-				?? throw new InvalidOperationException($"Embedded resource '{type.FullName}.jeto' not found in assembly '{type.GetAssembly()}'");
+			// try in order of preference: .jeto, .json, short name .jeto (for F#/VB.NET projects)
+			foreach (var file in GetTypeFiles(type))
+			{
+				var stream = GetStream(type, file);
+				if (stream != null)
+					return stream;
+			}
+			throw new InvalidOperationException($"Embedded resource '{type.FullName}.jeto' not found in assembly '{type.Assembly}'");
 		}
-
+		
 		static Stream GetStream(Type type, string resourceName)
 		{
-#if PCL
-			return type.GetTypeInfo().Assembly.GetManifestResourceStream(resourceName);
-#else
+			if (hotReloadFilePaths.TryGetValue(type, out var filePath) && File.Exists(filePath))
+				return File.OpenRead(filePath);
+			
 			return type.Assembly.GetManifestResourceStream(resourceName);
-#endif
+		}
+
+		internal static void RegisterHotReloadFile(Type type, string filePath)
+		{
+			hotReloadFilePaths[type] = filePath;
+		}
+
+		/// <summary>
+		/// Watches the .jeto file for changes and triggers the method specified by the <see cref="HotReloadAttribute"/>, if any, when the file changes.
+		/// Otherwise, it will reload the xeto into the control using <see cref="Load{T}"/>.
+		/// </summary>
+		/// <typeparam name="T">Control type</typeparam>
+		/// <param name="control">Instance of the control to watch for changes</param>
+		/// <param name="fileName">Name of the file to watch, or null to use the default based on the class name</param>
+		/// <param name="sourcePath">Source path of the file to watch</param>
+		/// <returns>true if the file is being watched, false otherwise</returns>
+		/// <since>2.10</since>
+		public static bool Watch<T>(T control, string fileName = null, [CallerFilePath] string sourcePath = null)
+		{
+			if (control == null)
+				throw new ArgumentNullException(nameof(control));
+
+			if (!FindFileNameFromType(typeof(T), ref fileName, sourcePath))
+			{
+				Trace.WriteLine($"File {fileName ?? $"for {typeof(T).FullName}"} could not be found to watch for hot reload.");
+				return false;
+			}
+
+			RegisterHotReloadFile(control.GetType(), fileName);
+
+			// see if the type has a HotReloadAttribute
+			if (HotReloadService.WatchFile(control, fileName, sourcePath))
+				return true;
+
+			// no HotReloadAttribute, so just reload the json into the control
+			return HotReloadService.WatchFile(control, fileName, c =>
+			{
+				if (c is T t)
+					Load(t);
+			}, sourcePath);
+		}
+
+		private static bool FindFileNameFromType(Type type, ref string fileName, string sourcePath)
+		{
+			if (sourcePath != null && File.Exists(sourcePath))
+				sourcePath = Path.GetDirectoryName(sourcePath);
+				
+			if (hotReloadFilePaths.TryGetValue(type, out var existing))
+			{
+				fileName = existing;
+				return true;
+			}
+
+			if (fileName != null)
+			{
+				if (File.Exists(fileName))
+					return true;
+				if (sourcePath != null)
+				{
+					var path = Path.Combine(sourcePath, fileName);
+					if (File.Exists(path))
+					{
+						fileName = path;
+						return true;
+					}
+				}
+				return false;
+			}
+			
+			foreach (var file in GetTypeFiles(type))
+			{
+				if (File.Exists(file))
+				{
+					fileName = file;
+					return true;
+				}
+				if (sourcePath != null)
+				{
+					var path = Path.Combine(sourcePath, file);
+					if (File.Exists(path))
+					{
+						fileName = path;
+						return true;
+					}
+				}
+			}
+			return false;
 		}
 
 		/// <summary>
@@ -83,9 +178,32 @@ namespace Eto.Serialization.Json
 			if (Equals(instance, null))
 				throw new ArgumentNullException(nameof(instance));
 
-			using (var stream = GetStream(typeof(T)))
+			using var stream = GetStream(typeof(T));
+			Load<T>(stream, instance, namespaceManager);
+			HotReload(instance);
+		}
+
+		private static string FindSourceForType(Type type)
+		{
+			var stack = new StackTrace(true);
+			for (int i = 0; i < stack.FrameCount; i++)
 			{
-				Load<T>(stream, instance, namespaceManager);
+				var frame = stack.GetFrame(i);
+				var method = frame.GetMethod();
+				if (method.DeclaringType == type)
+					return frame.GetFileName();
+			}
+			return null;
+		}
+
+		private static void HotReload<T>(T instance)
+		{
+			if (HotReloadService.Enabled)
+			{
+				// scan stack trace for type and get source location
+				var sourceFile = FindSourceForType(typeof(T));
+				if (sourceFile != null)
+					Watch<T>(instance, null, sourceFile);
 			}
 		}
 
@@ -110,7 +228,7 @@ namespace Eto.Serialization.Json
 			using (var stream = GetStream(typeof(T), resourceName))
 			{
 				if (stream == null)
-					throw new ArgumentException(nameof(resourceName), $"Embedded resource '{resourceName}' not found in assembly '{typeof(T).GetAssembly()}'");
+					throw new ArgumentException(nameof(resourceName), $"Embedded resource '{resourceName}' not found in assembly '{typeof(T).Assembly}'");
 
 				Load<T>(stream, instance, namespaceManager);
 			}
@@ -150,30 +268,54 @@ namespace Eto.Serialization.Json
 				{
 					TypeNameHandling = TypeNameHandling.Auto,
 					MissingMemberHandling = MissingMemberHandling.Error,
-					ContractResolver = new EtoContractResolver(),
+					ContractResolver = new EtoContractResolver()
 				};
 				serializer.Converters.Add(new TableLayoutConverter());
 				serializer.Converters.Add(new DynamicLayoutConverter());
 				serializer.Converters.Add(new DelegateConverter());
 				serializer.Converters.Add(new PropertyStoreConverter());
-				serializer.Converters.Add(new FontConverter());
+				serializer.Converters.Add(new Converters.FontConverter());
 				serializer.Converters.Add(new StackLayoutConverter());
 				serializer.Converters.Add(new ListItemConverter());
 				serializer.Converters.Add(new TypeConverterConverter());
 			}
+			var localAssembly = namespaceManager?.LocalAssembly ?? (Equals(instance, null) ? typeof(T) : instance.GetType()).Assembly;
+			if (localAssembly == typeof(Control).Assembly)
+				localAssembly = null;
+
+			// nested loads of user controls replace the binder and names, so they are put back afterwards
+			var oldBinder = serializer.SerializationBinder;
+			var oldNames = serializer.ReferenceResolver;
 			serializer.SerializationBinder = new EtoBinder
 			{
 				NamespaceManager = namespaceManager ?? new DefaultNamespaceManager(),
-				Instance = instance
+				Instance = instance,
+				LocalAssembly = localAssembly
 			};
+			var names = new NameScope { Instance = instance };
+			serializer.ReferenceResolver = names;
 
-			if (ReferenceEquals(instance, default(T)))
-				return (T)serializer.Deserialize(reader, typeof(T));
+			Control.BeginDesignLoad();
+			try
+			{
+				if (ReferenceEquals(instance, default(T)))
+				{
+					var result = (T)serializer.Deserialize(reader, typeof(T));
+					names.Complete();
+					return result;
+				}
 
-			serializer.Populate(reader, instance);
-			return instance;
+				serializer.Populate(reader, instance);
+				names.Complete();
+				return instance;
+			}
+			finally
+			{
+				Control.EndDesignLoad();
+				serializer.SerializationBinder = oldBinder;
+				serializer.ReferenceResolver = oldNames;
+			}
 		}
-
 	}
 }
 

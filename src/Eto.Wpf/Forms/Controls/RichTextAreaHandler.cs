@@ -1,21 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using swc = System.Windows.Controls;
-using sw = System.Windows;
 using swd = System.Windows.Documents;
-using swm = System.Windows.Media;
-using swi = System.Windows.Input;
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.Wpf.Drawing;
-using System.Globalization;
-using System.Collections;
-using System.IO;
 using Eto.Wpf.CustomControls.FontDialog;
-using System.Text.RegularExpressions;
-
 namespace Eto.Wpf.Forms.Controls
 {
 	public class EtoRichTextBox : swc.RichTextBox, IEtoWpfControl
@@ -434,6 +419,8 @@ namespace Eto.Wpf.Forms.Controls
 			set
 			{
 				var typeface = (value?.Handler as FontTypefaceHandler)?.Control;
+				if (typeface == null)
+					return;
 				ApplyFont(OnTranslateFamily(typeface?.FontFamily ?? Control.FontFamily), OnTranslateTypeface(typeface), typeface?.Weight, typeface?.Stretch, typeface?.Style);
 			}
 		}
@@ -974,7 +961,7 @@ namespace Eto.Wpf.Forms.Controls
 		public void Delete(Range<int> range)
 		{
 			var textRange = GetRange(range);
-			textRange.Text = null;
+			textRange.Text = string.Empty;
 		}
 
 		public void Insert(int position, string text)
@@ -997,6 +984,17 @@ namespace Eto.Wpf.Forms.Controls
 				ContentRange.ApplyPropertyValue(swd.Block.TextAlignmentProperty, value.ToWpfTextAlignment());
 			}
 		}
+
+		public override void ScrollTo(Range<int> range)
+		{
+			var textRange = GetRange(range);
+			var rect = textRange.End.GetCharacterRect(swd.LogicalDirection.Backward);
+			Control.ScrollToVerticalOffset(rect.Top);
+			Control.ScrollToHorizontalOffset(rect.Left);
+		}
+
+		public override int TextLength => ContentRange.GetLength();
+
 	}
 
 	static class FlowDocumentExtensions

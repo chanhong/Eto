@@ -1,9 +1,3 @@
-using Eto.Drawing;
-using Eto.Forms;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using swf = System.Windows.Forms;
 using Eto.WinForms.Forms;
 
 namespace Eto.WinForms
@@ -139,12 +133,13 @@ namespace Eto.WinForms
 				return false;
 
 			var modifiers = swf.Control.ModifierKeys.ToEto();
-			var delta = new SizeF(0, Win32.GetWheelDeltaWParam(be.Message.WParam) / WinConversions.WheelDelta);
+			var wheelDelta = Win32.GetWheelDeltaWParam(be.Message.WParam) / WinConversions.WheelDelta;
+			var delta = be.Message.Msg == (int)Win32.WM.MOUSEHWHEEL ? new SizeF(-wheelDelta, 0) : new SizeF(0, wheelDelta);
 			var buttons = Win32.GetMouseButtonWParam(be.Message.WParam).ToEto();
 			if (modifyButtons != null)
 				buttons = modifyButtons(buttons);
 			var handler = be.WindowsControl;
-			var mousePosition = swf.Control.MousePosition.ToEto();
+			var mousePosition = handler.ContainerControl.DeviceUnitsToLogical(swf.Control.MousePosition);
 
 			var msg = be.Message;
 			var me = new MouseEventArgs(buttons, modifiers, mainControl.PointFromScreen(mousePosition), delta);

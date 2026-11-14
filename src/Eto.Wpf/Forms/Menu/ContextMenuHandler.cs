@@ -1,11 +1,3 @@
-using swc = System.Windows.Controls;
-using sw = System.Windows;
-using swi = System.Windows.Input;
-using Eto.Forms;
-using System;
-using System.Linq;
-using System.ComponentModel;
-using Eto.Drawing;
 using System.Windows.Controls.Primitives;
 
 namespace Eto.Wpf.Forms.Menu
@@ -20,6 +12,11 @@ namespace Eto.Wpf.Forms.Menu
 		public ContextMenuHandler()
 		{
 			Control = new swc.ContextMenu();
+		}
+		
+		public ContextMenuHandler(swc.ContextMenu control)
+		{
+			Control = control;
 		}
 
 		public swi.InputBindingCollection InputBindings
@@ -73,6 +70,9 @@ namespace Eto.Wpf.Forms.Menu
 			Control.InputBindings.RemoveKeyBindings(Control.Items);
 			Control.Items.Clear();
 		}
+
+		// Wpf does not add any system items to a context menu, so this is only stored to round-trip the value.
+		public ContextMenuSystemItems IncludeSystemItems { get; set; } = ContextMenuSystemItems.All;
 
 		public void Show(Control relativeTo, PointF? location)
 		{
@@ -132,5 +132,22 @@ namespace Eto.Wpf.Forms.Menu
 			Control.IsOpen = true;
 			WpfFrameworkElementHelper.ShouldCaptureMouse = false;
 		}
+
+		internal static IEnumerable<MenuItem> GetItems(swc.ItemsControl contextMenu)
+		{
+			foreach (var item in contextMenu.Items)
+			{
+				if (item is swc.MenuItem mi)
+				{
+					if (mi.HasItems)
+						yield return new SubMenuItem(new SubMenuItemHandler(mi), GetItems(mi));
+					else
+						yield return new ButtonMenuItem(new ButtonMenuItemHandler(mi));
+				}
+				else if (item is swc.Separator sep)
+					yield return new SeparatorMenuItem(new SeparatorMenuItemHandler(sep));
+			}
+		}
+
 	}
 }

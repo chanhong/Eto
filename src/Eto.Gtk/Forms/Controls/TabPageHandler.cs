@@ -1,21 +1,20 @@
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.GtkSharp.Drawing;
 
 namespace Eto.GtkSharp.Forms.Controls
 {
-	public class TabPageHandler : GtkPanel<Gtk.VBox, TabPage, TabPage.ICallback>, TabPage.IHandler
+	public class TabPageHandler : GtkPanel<Gtk.Box, TabPage, TabPage.ICallback>, TabPage.IHandler
 	{
 		Gtk.Label label;
-		readonly Gtk.HBox tab;
+		readonly Gtk.Box tab;
 		Gtk.Image gtkimage;
 		Image image;
+		string text = string.Empty;
 		public static Size MaxImageSize = new Size(16, 16);
 
 		public TabPageHandler()
 		{
-			Control = new Gtk.VBox();
-			tab = new Gtk.HBox();
+			Control = new Gtk.Box(Gtk.Orientation.Vertical, 0);
+			tab = new Gtk.Box(Gtk.Orientation.Horizontal, 0);
 			label = new Gtk.Label();
 			tab.PackEnd(label, true, true, 0);
 			tab.ShowAll();
@@ -59,8 +58,13 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		public override string Text
 		{
-			get { return label.Text.ToEtoMnemonic(); }
-			set { label.TextWithMnemonic = value.ToPlatformMnemonic(); }
+			// Gtk.Label.Text omits mnemonic markers and unescapes literals, so retain the assigned title.
+			get { return text; }
+			set
+			{
+				text = value ?? string.Empty;
+				label.TextWithMnemonic = text.ToPlatformMnemonic();
+			}
 		}
 
 		protected override void Dispose(bool disposing)

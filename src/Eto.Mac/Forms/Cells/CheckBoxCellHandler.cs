@@ -1,40 +1,12 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.Mac.Forms.Controls;
 
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
 
 namespace Eto.Mac.Forms.Cells
 {
 	public class CheckBoxCellHandler : CellHandler<CheckBoxCell, CheckBoxCell.ICallback>, CheckBoxCell.IHandler
 	{
+
+		static readonly NSColor defaultColor = new CellView().Cell.BackgroundColor;
 
 		public override void SetObjectValue(object dataItem, NSObject value)
 		{
@@ -76,8 +48,6 @@ namespace Eto.Mac.Forms.Cells
 
 		public class EtoButton : NSButton
 		{
-			public event EventHandler Focussed;
-
 			public EtoButton()
 			{
 			}
@@ -85,30 +55,38 @@ namespace Eto.Mac.Forms.Cells
 				: base(handle)
 			{
 			}
-
-			public override void LockFocus()
-			{
-				base.LockFocus();
-				if (Focussed != null)
-					Focussed(this, EventArgs.Empty);
-			}
 		}
 
-		public override Color GetBackgroundColor(NSView view)
+		public override Color GetBackgroundColor(NSView view) => ((CellView)view).Cell.BackgroundColor.ToEto();
+
+		public override void SetBackgroundColor(NSView view, Color color) => ((CellView)view).Cell.BackgroundColor = color.ToNSUI();
+#if __MACOS__
+		static IntPtr selBackgroundColor_Handle = Selector.GetHandle("setBackgroundColor:");
+#endif
+		
+		private void SetDefaults(CellView view)
 		{
-			return ((CellView)view).Cell.BackgroundColor.ToEto();
+#if __MACOS__
+			// doesn't support null currently..
+			Messaging.void_objc_msgSend_IntPtr(view.Cell.Handle, selBackgroundColor_Handle, defaultColor?.Handle ?? IntPtr.Zero);
+#elif MONOMAC
+			view.Cell.BackgroundColor = defaultColor;
+#endif
 		}
-
-		public override void SetBackgroundColor(NSView view, Color color)
-		{
-			var field = ((CellView)view).Cell;
-			field.BackgroundColor = color.ToNSUI();
-		}
+		
 
 		class CellView : NSButton
 		{
 			[Export("item")]
 			public NSObject Item { get; set; }
+
+			WeakReference handler;
+			public CheckBoxCellHandler Handler
+			{
+				get => handler?.Target as CheckBoxCellHandler;
+				set => handler = new WeakReference(value);
+			}
+
 			public CellView() { }
 			public CellView(IntPtr handle) : base(handle) { }
 		}
@@ -120,28 +98,34 @@ namespace Eto.Mac.Forms.Cells
 			var view = tableView.MakeView(tableColumn.Identifier, tableView) as CellView;
 			if (view == null)
 			{
-				view = new CellView { Title = string.Empty };
+				view = new CellView { Title = string.Empty, Handler = this };
 				view.Identifier = tableColumn.Identifier;
 				view.SetButtonType(NSButtonType.Switch);
 				view.Bind(enabledBinding, tableColumn, "editable", null);
 
 				var col = Array.IndexOf(tableView.TableColumns(), tableColumn);
+				// The cell view is reused and can outlive the grid, so only reference the handler weakly.
 				view.Activated += (sender, e) =>
 				{
 					var control = (CellView)sender;
+					var h = control.Handler;
+					var colHandler = h?.ColumnHandler;
+					if (colHandler == null)
+						return;
 					var r = (int)control.Tag;
 					var item = getItem(control.Item, r);
-					var ee = MacConversions.CreateCellEventArgs(ColumnHandler.Widget, tableView, r, col, item);
-					ColumnHandler.DataViewHandler.OnCellEditing(ee);
-					SetObjectValue(item, control.ObjectValue);
-					control.ObjectValue = GetObjectValue(item);
+					var ee = MacConversions.CreateCellEventArgs(colHandler.Widget, null, r, col, item);
+					colHandler.DataViewHandler?.OnCellEditing(ee);
+					h.SetObjectValue(item, control.ObjectValue);
+					control.ObjectValue = h.GetObjectValue(item);
 
-					ColumnHandler.DataViewHandler.OnCellEdited(ee);
+					colHandler.DataViewHandler?.OnCellEdited(ee);
 				};
 			}
 			view.Tag = row;
 			view.Item = obj;
-			var args = new MacCellFormatArgs(ColumnHandler.Widget, getItem(obj, row), row, view);
+			SetDefaults(view);
+			var args = new MacGridCellFormatEventArgs(ColumnHandler.Widget, getItem(obj, row), row, view);
 			ColumnHandler.DataViewHandler.OnCellFormatting(args);
 			return view;
 		}

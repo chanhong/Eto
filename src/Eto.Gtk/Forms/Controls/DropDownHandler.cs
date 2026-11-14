@@ -1,9 +1,4 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.GtkSharp.Drawing;
-using System.Collections;
-using System.Collections.Generic;
 using GLib;
 using Gtk;
 
@@ -67,12 +62,16 @@ namespace Eto.GtkSharp.Forms.Controls
 
 			public virtual void HandleChanged(object sender, EventArgs e)
 			{
-				if (Handler.SuppressIndexChanged > 0)
+				var handler = Handler;
+				if (handler == null)
 					return;
-				var newIndex = Handler.SelectedIndex;
+					
+				if (handler.SuppressIndexChanged > 0)
+					return;
+				var newIndex = handler.SelectedIndex;
 				if (newIndex != lastIndex)
 				{
-					Handler.Callback.OnSelectedIndexChanged(Handler.Widget, EventArgs.Empty);
+					handler.Callback.OnSelectedIndexChanged(handler.Widget, EventArgs.Empty);
 					lastIndex = newIndex;
 				}
 			}
@@ -80,21 +79,25 @@ namespace Eto.GtkSharp.Forms.Controls
 #if GTK2
 			internal void HandlePopupShownChanged(object o, GLib.NotifyArgs args)
 			{
-				if (Handler.Control.PopupShown)
-					Handler.Callback.OnDropDownOpening(Handler.Widget, EventArgs.Empty);
+				var handler = Handler;
+				if (handler == null)
+					return;
+
+				if (handler.Control.PopupShown)
+					handler.Callback.OnDropDownOpening(handler.Widget, EventArgs.Empty);
 				else
-					Handler.Callback.OnDropDownClosed(Handler.Widget, EventArgs.Empty);
+					handler.Callback.OnDropDownClosed(handler.Widget, EventArgs.Empty);
 			}
 #elif GTK3
 			[GLib.ConnectBefore]
 			public virtual void HandlePoppedUp(object sender, EventArgs e)
 			{
-				Handler.Callback.OnDropDownOpening(Handler.Widget, EventArgs.Empty);
+				Handler?.Callback.OnDropDownOpening(Handler.Widget, EventArgs.Empty);
 			}
 
 			public virtual void HandlePoppedDown(object o, Gtk.PoppedDownArgs args)
 			{
-				Handler.Callback.OnDropDownClosed(Handler.Widget, EventArgs.Empty);
+				Handler?.Callback.OnDropDownClosed(Handler.Widget, EventArgs.Empty);
 			}
 #endif
 		}
@@ -184,18 +187,21 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		public IEnumerable<object> DataStore
 		{
-			get { return collection != null ? collection.Collection : null; }
+			get => collection?.Collection;
 			set
 			{
 				SuppressIndexChanged++;
 				var selected = Widget.SelectedValue;
+				var selectedIndex = SelectedIndex;
 				collection?.Unregister();
 				collection = new CollectionHandler { Handler = this };
 				collection.Register(value);
 				if (!ReferenceEquals(selected, null))
 				{
-					SelectedIndex = collection.IndexOf(selected);
-					Callback.OnSelectedIndexChanged(Widget, EventArgs.Empty);
+					var newIndex = collection.IndexOf(selected);
+					SelectedIndex = newIndex;
+					if (newIndex != selectedIndex)
+						Callback.OnSelectedIndexChanged(Widget, EventArgs.Empty);
 				}
 				SuppressIndexChanged--;
 			}
@@ -260,7 +266,7 @@ namespace Eto.GtkSharp.Forms.Controls
 					break;
 #endif
 				case Eto.Forms.Control.ShownEvent:
-					Control.Mapped += Connector.MappedEvent;
+					// raised by FireOnShown, not a native signal
 					break;
 				case DropDown.FormatItemEvent:
 					SetAttributes(true);

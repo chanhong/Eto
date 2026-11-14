@@ -1,12 +1,4 @@
-using System;
-using swf = System.Windows.Forms;
-using sd = System.Drawing;
-using Eto.Forms;
-using System.Collections.Generic;
-using System.Linq;
 using Eto.WinForms.Drawing;
-using Eto.Drawing;
-
 namespace Eto.WinForms.Forms.Controls
 {
 	public class ListBoxHandler : WindowsControl<swf.ListBox, ListBox, ListBox.ICallback>, ListBox.IHandler
@@ -37,7 +29,7 @@ namespace Eto.WinForms.Forms.Controls
 					ItemHeight = value.Height;
 				}
 			}
-			
+
 			protected override void OnMeasureItem(swf.MeasureItemEventArgs e)
 			{
 				base.OnMeasureItem(e);
@@ -202,5 +194,14 @@ namespace Eto.WinForms.Forms.Controls
 		{
 			return !intrinsicEvents.Contains((Win32.WM)msg.Msg) && base.ShouldBubbleEvent(msg);
 		}
+
+		public BorderType Border
+		{
+			get { return Control.BorderStyle.ToEto(); }
+			set { Control.BorderStyle = value.ToSWF(); }
+		}
+
+		public IIndirectBinding<Image> ItemImageBinding { get; set; }
+
 	}
 }

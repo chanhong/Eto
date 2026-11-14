@@ -1,7 +1,3 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-
 namespace Eto.Test.Sections.Controls
 {
 	[Section("Controls", typeof(WebView))]
@@ -236,7 +232,15 @@ namespace Eto.Test.Sections.Controls
 		void LoadHtml()
 		{
 			webView.LoadHtml(@"<html>
-<head><title>Hello!</title></head>
+<head>
+  <title>Hello!</title>
+  <style>
+    html, body {
+      background: white;
+      color: black;
+    }
+  </style>
+</head>
 <body>
 	<h1>Some custom html</h1>
 	<script type='text/javascript'>
@@ -434,7 +438,7 @@ namespace Eto.Test.Sections.Controls
 			};
 			control.Click += delegate
 			{
-				var url = PromptString("Url", "https://html5test.com", "Go");
+				var url = PromptString("Url", "https://html5test.co", "Go");
 				if (!string.IsNullOrEmpty(url) && Uri.TryCreate(url, UriKind.Absolute, out var uri))
 				{
 					webView.Url = uri;

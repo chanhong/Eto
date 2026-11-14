@@ -1,8 +1,4 @@
-using System;
-using Eto.Forms;
 using Eto.GtkSharp.Drawing;
-using Eto.Drawing;
-
 namespace Eto.GtkSharp.Forms.Controls
 {
 	public class ImageViewHandler : GtkControl<Gtk.DrawingArea, ImageView, ImageView.ICallback>, ImageView.IHandler
@@ -21,7 +17,7 @@ namespace Eto.GtkSharp.Forms.Controls
 			Control.Events |= Gdk.EventMask.ExposureMask;
 			#if GTK3
 			// set to transparent by default
-			Control.OverrideBackgroundColor(Gtk.StateFlags.Normal, Colors.Transparent.ToRGBA());
+			Control.SetBackground(Colors.Transparent);
 			#endif
 		}
 
@@ -51,11 +47,15 @@ namespace Eto.GtkSharp.Forms.Controls
 			{
 				Gdk.EventExpose ev = args.Event;
 				var h = Handler;
+				if (h == null)
+					return;
 				var handler = new GraphicsHandler(h.Control, ev.Window);
 #else
 			public void HandleDrawn(object o, Gtk.DrawnArgs args)
 			{
 				var h = Handler;
+				if (h == null)
+					return;
 				var handler = new GraphicsHandler(args.Cr, h.Control.CreatePangoContext(), false);
 #endif
 				if (h.image == null)

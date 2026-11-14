@@ -1,10 +1,4 @@
-using System;
-using System.IO;
-using Eto.Drawing;
-using sd = System.Drawing;
-using SWF = System.Windows.Forms;
-using System.Collections.Generic;
-using System.Linq;
+using System.Windows.Controls;
 
 namespace Eto.WinForms.Drawing
 {
@@ -15,13 +9,19 @@ namespace Eto.WinForms.Drawing
 
 	public class IconHandler : WidgetHandler<sd.Icon, Icon>, Icon.IHandler, IWindowsImage, IWindowsIconSource
 	{
-		Dictionary<int, sd.Image> cachedImages;
-		List<IconFrame> frames;
-		IconFrame idealFrame;
+		Dictionary<int, sd.Image> _cachedImages;
+		List<IconFrame> _frames;
+		IconFrame _idealFrame;
+		bool _destroyIcon;
 
 		public IconHandler(sd.Icon control)
 		{
 			this.Control = control;
+		}
+		public IconHandler(sd.Icon control, bool destroyIcon)
+		{
+			this.Control = control;
+			_destroyIcon = destroyIcon;
 		}
 
 		public IconHandler()
@@ -41,7 +41,7 @@ namespace Eto.WinForms.Drawing
 		{
 			get
 			{
-				return frames ?? SplitIcon(Control);
+				return _frames ?? SplitIcon(Control);
 			}
 		}
 
@@ -57,11 +57,12 @@ namespace Eto.WinForms.Drawing
 
 		public IconFrame GetIdealIcon()
 		{
-			if (idealFrame != null)
-				return idealFrame;
+			if (_idealFrame != null)
+				return _idealFrame;
 			var orderedFrames = SplitIcon(Control).OrderByDescending(r => r.PixelSize.Width * r.PixelSize.Height);
-			idealFrame = orderedFrames.FirstOrDefault(r => r.Scale == 1) ?? orderedFrames.First();
-			return idealFrame;
+			var dpi = Win32.SystemDpi;
+			_idealFrame = orderedFrames.FirstOrDefault(r => Math.Abs(r.Scale - dpi) < 0.0001f) ?? orderedFrames.First();
+			return _idealFrame;
 		}
 
 		public sd.Icon GetIconClosestToSize(int width)
@@ -83,8 +84,8 @@ namespace Eto.WinForms.Drawing
 
 		public List<IconFrame> SplitIcon(sd.Icon icon)
 		{
-			if (frames != null)
-				return frames;
+			if (_frames != null)
+				return _frames;
 			if (icon == null)
 			{
 				throw new ArgumentNullException("icon");
@@ -102,54 +103,65 @@ namespace Eto.WinForms.Drawing
 			var splitIcons = new List<sd.Icon>();
 			int count = BitConverter.ToInt16(srcBuf, 4); // ICONDIR.idCount
 
-			for (int i = 0; i < count; i++)
+			if (count == 1)
 			{
-				using (var destStream = new MemoryStream())
-				using (var writer = new BinaryWriter(destStream))
+				splitIcons.Add(icon);
+			}
+			else
+			{
+				for (int i = 0; i < count; i++)
 				{
-					// Copy ICONDIR and ICONDIRENTRY.
-					int pos = 0;
-					writer.Write(srcBuf, pos, sICONDIR - 2);
-					writer.Write((short)1);    // ICONDIR.idCount == 1;
+					using (var destStream = new MemoryStream())
+					using (var writer = new BinaryWriter(destStream))
+					{
+						// Copy ICONDIR and ICONDIRENTRY.
+						int pos = 0;
+						writer.Write(srcBuf, pos, sICONDIR - 2);
+						writer.Write((short)1);    // ICONDIR.idCount == 1;
 
-					pos += sICONDIR;
-					pos += sICONDIRENTRY * i;
+						pos += sICONDIR;
+						pos += sICONDIRENTRY * i;
 
-					writer.Write(srcBuf, pos, sICONDIRENTRY - 4); // write out icon info (minus old offset)
-					writer.Write(sICONDIR + sICONDIRENTRY);    // write offset of icon data
-					pos += 8;
+						writer.Write(srcBuf, pos, sICONDIRENTRY - 4); // write out icon info (minus old offset)
+						writer.Write(sICONDIR + sICONDIRENTRY);    // write offset of icon data
+						pos += 8;
 
-					// Copy picture and mask data.
-					int imgSize = BitConverter.ToInt32(srcBuf, pos);       // ICONDIRENTRY.dwBytesInRes
-					pos += 4;
-					int imgOffset = BitConverter.ToInt32(srcBuf, pos);    // ICONDIRENTRY.dwImageOffset
-					if (imgOffset + imgSize > srcBuf.Length)
-						throw new ArgumentException("ugh");
-					writer.Write(srcBuf, imgOffset, imgSize);
-					writer.Flush();
+						// Copy picture and mask data.
+						int imgSize = BitConverter.ToInt32(srcBuf, pos);       // ICONDIRENTRY.dwBytesInRes
+						pos += 4;
+						int imgOffset = BitConverter.ToInt32(srcBuf, pos);    // ICONDIRENTRY.dwImageOffset
+						if (imgOffset + imgSize > srcBuf.Length)
+							throw new ArgumentException("ugh");
+						writer.Write(srcBuf, imgOffset, imgSize);
+						writer.Flush();
 
-					// Create new icon.
-					destStream.Seek(0, SeekOrigin.Begin);
-					splitIcons.Add(new sd.Icon(destStream));
+						// Create new icon.
+						destStream.Seek(0, SeekOrigin.Begin);
+						splitIcons.Add(new sd.Icon(destStream));
+					}
 				}
 			}
 
-			frames = splitIcons.Select(r => IconFrame.FromControlObject(1, r)).ToList();
-			return frames;
+			_frames = splitIcons.Select(r => IconFrame.FromControlObject(1, r)).ToList();
+			return _frames;
 		}
 
 		protected override void Dispose(bool disposing)
 		{
+			if (_destroyIcon && Control != null)
+			{
+				Win32.DestroyIcon(Control.Handle);
+			}
 			base.Dispose(disposing);
 			if (disposing)
 			{
-				if (frames != null)
+				if (_frames != null)
 				{
-					foreach (var frame in frames)
+					foreach (var frame in _frames)
 					{
 						((sd.Icon)frame.ControlObject).Dispose();
 					}
-					frames = null;
+					_frames = null;
 				}
 			}
 		}
@@ -158,15 +170,15 @@ namespace Eto.WinForms.Drawing
 		{
 			if (size != null)
 			{
-				if (cachedImages == null)
-					cachedImages = new Dictionary<int, sd.Image>();
+				if (_cachedImages == null)
+					_cachedImages = new Dictionary<int, sd.Image>();
 
-				if (cachedImages.TryGetValue(size.Value, out var bmp))
+				if (_cachedImages.TryGetValue(size.Value, out var bmp))
 					return bmp;
 
 				var icon = GetIconClosestToSize(size.Value);
 				bmp = icon.ToBitmap();
-				cachedImages[size.Value] = bmp;
+				_cachedImages[size.Value] = bmp;
 				return bmp;
 			}
 			return GetIdealIcon().Bitmap.ToSD();
@@ -211,10 +223,97 @@ namespace Eto.WinForms.Drawing
 
 		public void Create(IEnumerable<IconFrame> frames)
 		{
-			this.frames = frames.ToList();
+			this._frames = frames.ToList();
 			var frame = GetIdealIcon();
 			size = frame.Size;
-			Control = (sd.Icon)frame.ControlObject;
+			// a multi-size .ico lets the window pick the best frame for each icon size instead of scaling one
+			Control = CreateMultiSizeIcon(_frames) ?? (sd.Icon)frame.ControlObject;
+		}
+
+		static sd.Icon CreateMultiSizeIcon(IEnumerable<IconFrame> frames)
+		{
+			var icons = frames
+				.Select(r => (sd.Icon)r.ControlObject)
+				.Where(r => r.Width <= 256 && r.Height <= 256)
+				.GroupBy(r => r.Size)
+				.Select(r => r.First())
+				.OrderBy(r => r.Width * r.Height)
+				.ToList();
+			if (icons.Count == 0)
+				return null;
+
+			// uncompressed DIBs rather than PNG, as .NET Framework can't read PNG frames back
+			var images = icons.Select(EncodeDib).ToList();
+			var stream = new MemoryStream();
+			var writer = new BinaryWriter(stream);
+			writer.Write((short)0); // reserved
+			writer.Write((short)1); // type: icon
+			writer.Write((short)icons.Count);
+			var offset = sICONDIR + sICONDIRENTRY * icons.Count;
+			for (int i = 0; i < icons.Count; i++)
+			{
+				// 0 means 256
+				writer.Write((byte)(icons[i].Width & 0xFF));
+				writer.Write((byte)(icons[i].Height & 0xFF));
+				writer.Write((byte)0); // palette size
+				writer.Write((byte)0); // reserved
+				writer.Write((short)1); // planes
+				writer.Write((short)32); // bits per pixel
+				writer.Write(images[i].Length);
+				writer.Write(offset);
+				offset += images[i].Length;
+			}
+			foreach (var image in images)
+				writer.Write(image);
+			writer.Flush();
+			stream.Position = 0;
+			return new sd.Icon(stream);
+		}
+
+		static byte[] EncodeDib(sd.Icon icon)
+		{
+			using (var bitmap = icon.ToBitmap())
+			using (var stream = new MemoryStream())
+			using (var writer = new BinaryWriter(stream))
+			{
+				var width = bitmap.Width;
+				var height = bitmap.Height;
+				var maskStride = (width + 31) / 32 * 4;
+
+				// BITMAPINFOHEADER, with the height doubled to include the AND mask
+				writer.Write(40);
+				writer.Write(width);
+				writer.Write(height * 2);
+				writer.Write((short)1); // planes
+				writer.Write((short)32); // bits per pixel
+				writer.Write(0); // compression: none
+				writer.Write(width * height * 4 + maskStride * height);
+				writer.Write(0);
+				writer.Write(0);
+				writer.Write(0);
+				writer.Write(0);
+
+				var data = bitmap.LockBits(new sd.Rectangle(0, 0, width, height), sd.Imaging.ImageLockMode.ReadOnly, sd.Imaging.PixelFormat.Format32bppArgb);
+				try
+				{
+					var row = new byte[width * 4];
+					// DIB rows are stored bottom-up
+					for (int y = height - 1; y >= 0; y--)
+					{
+						Marshal.Copy(data.Scan0 + y * data.Stride, row, 0, row.Length);
+						writer.Write(row);
+					}
+				}
+				finally
+				{
+					bitmap.UnlockBits(data);
+				}
+
+				// empty AND mask, transparency comes from the alpha channel
+				writer.Write(new byte[maskStride * height]);
+				writer.Flush();
+				return stream.ToArray();
+			}
 		}
 	}
 }

@@ -1,37 +1,3 @@
-using System;
-using Eto.Drawing;
-using Eto.Forms;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 namespace Eto.Mac.Forms.Controls
 {
 	/// <summary>
@@ -63,6 +29,18 @@ namespace Eto.Mac.Forms.Controls
 				Cell.Wraps = false;
 				Cell.UsesSingleLineMode = true;
 			}
+			
+			[Export("textViewDidChangeSelection:")]
+			public void TextViewDidChangeSelection(NSNotification notification)
+			{
+				var h = Handler;
+				if (h != null)
+				{
+					var textView = (NSTextView)notification.Object;
+					h.SetLastSelection(textView.SelectedRange.ToEto());
+				}
+			}
+			
 		}
 
 		public override bool HasFocus
@@ -121,6 +99,14 @@ namespace Eto.Mac.Forms.Controls
 				handler.Callback.OnTextChanged(handler.Widget, EventArgs.Empty);
 			}
 		}
+		
+		protected override bool SelectAllOnMouseDown(MouseEventArgs e)
+		{
+			var cancelRect = Control.Cell.CancelButtonRectForBounds(Control.Bounds).ToEto();
+			if (!cancelRect.Contains(e.Location))
+				return base.SelectAllOnMouseDown(e);
+			return false;
+		}
 
 		public bool ReadOnly
 		{
@@ -139,5 +125,12 @@ namespace Eto.Mac.Forms.Controls
 			get { return Control.Cell.PlaceholderString; }
 			set { Control.Cell.PlaceholderString = value ?? string.Empty; }
 		}
+
+		public int GetCharacterIndex(PointF location)
+		{
+			return MacTextHitTest.GetCharacterIndex(Control, location);
+		}
+
+		public PaddingF TextInset => MacTextHitTest.GetTextInset(Control);
 	}
 }

@@ -1,50 +1,11 @@
-using System;
-using Eto.Forms;
-using System.Collections.Generic;
-using System.Linq;
-using Eto.Drawing;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 namespace Eto.Mac.Forms.Controls
 {
 	public class RadioButtonHandler : MacButton<NSButton, RadioButton, RadioButton.ICallback>, RadioButton.IHandler
 	{
-		static readonly object RadioGroup_Key = new object();
+		RadioGroup _group;
+		RadioButton _controller;
 
-		RadioGroup Group
-		{
-			get { return Widget.Properties.Get<RadioGroup>(RadioGroup_Key); }
-			set { Widget.Properties[RadioGroup_Key] = value; }
-		}
+		RadioGroup Group => _group ??= new RadioGroup { this };
 
 		class RadioGroup : List<RadioButtonHandler>
 		{
@@ -87,6 +48,29 @@ namespace Eto.Mac.Forms.Controls
 						return 12;
 					case NSControlSize.Mini:
 						return 10;
+				}
+			}
+			
+			public override void DrawWithFrame(CGRect cellFrame, NSView inView)
+			{
+				if (NSGraphicsContext.IsCurrentContextDrawingToScreen)
+				{
+					base.DrawWithFrame(cellFrame, inView);
+				}
+				else
+				{
+					DrawTitle(AttributedTitle, TitleRectForBounds(cellFrame), inView);
+					var state = State;
+					var text = state == NSCellStateValue.On ? "⦿" : state == NSCellStateValue.Mixed ? "⊖" : "○";
+					var font = NSFont.SystemFontOfSize(NSFont.SystemFontSizeForControlSize(ControlSize));
+					var attributes = NSDictionary.FromObjectAndKey(font, NSStringAttributeKey.Font);
+					var str = new NSAttributedString(text, attributes);
+					var frame = cellFrame;
+					var size = str.Size;
+					var offset = (nfloat)Math.Max(0, (frame.Height - size.Height) / 2);
+					frame.Y += offset;
+					frame.Height -= offset;
+					str.DrawString(frame);
 				}
 			}
 		}
@@ -144,12 +128,23 @@ namespace Eto.Mac.Forms.Controls
 				Control.Window?.MakeFirstResponder(Control);
 		}
 
-		public void Create(RadioButton controller)
+		public RadioButton Controller
 		{
-			var controllerHandler = controller?.Handler as RadioButtonHandler;
-			Group = controllerHandler?.Group ?? new RadioGroup();
+			get => _controller;
+			set
+			{
+				_controller = value;
+				var controllerHandler = value?.Handler as RadioButtonHandler;
+				if (controllerHandler != null && ReferenceEquals(controllerHandler.Group, Group))
+					return;
 
-			Group.Add(this);
+				Group.Remove(this);
+				_group = controllerHandler?.Group;
+				Group.Add(this);
+
+				if (Checked)
+					Group.SetButtonStates(this);
+			}
 		}
 
 		public bool Checked

@@ -1,13 +1,5 @@
-using System;
-using Eto.Forms;
 using NUnit.Framework;
-using System.Collections.Generic;
-using Eto.Drawing;
-using System.Threading;
 using System.Runtime.ExceptionServices;
-using System.Reflection;
-using System.Linq;
-
 namespace Eto.Test.UnitTests.Forms.Controls
 {
 	[TestFixture]
@@ -52,10 +44,10 @@ namespace Eto.Test.UnitTests.Forms.Controls
 					});
 				};
 				form.Content = TableLayout.AutoSized(ctl);
-				Assert.AreEqual(0, shownCount);
+				Assert.That(shownCount, Is.EqualTo(0));
 			});
-			Assert.AreEqual(1, shownCount);
-			Assert.AreEqual(expectedVisualShown, visualControlShownCount, "Visual controls didn't get Shown event triggered");
+			Assert.That(shownCount, Is.EqualTo(1));
+			Assert.That(visualControlShownCount, Is.EqualTo(expectedVisualShown), "Visual controls didn't get Shown event triggered");
 		}
 
 		[TestCaseSource(nameof(GetControlTypes))]
@@ -65,6 +57,7 @@ namespace Eto.Test.UnitTests.Forms.Controls
 			int shownCount = 0;
 			Form(form =>
 			{
+				form.Size = new Size(200, 200);
 				form.Shown += (sender, e) => Application.Instance.AsyncInvoke(() =>
 				{
 					try
@@ -90,7 +83,7 @@ namespace Eto.Test.UnitTests.Forms.Controls
 			if (exception != null)
 				ExceptionDispatchInfo.Capture(exception).Throw();
 
-			Assert.AreEqual(1, shownCount);
+			Assert.That(shownCount, Is.EqualTo(1));
 		}
 
 		[TestCaseSource(nameof(GetControlTypes))]
@@ -111,9 +104,9 @@ namespace Eto.Test.UnitTests.Forms.Controls
 					});
 				};
 				ctl.Visible = false;
-				Assert.AreEqual(0, shownCount);
+				Assert.That(shownCount, Is.EqualTo(0));
 				form.Content = TableLayout.AutoSized(ctl);
-				Assert.AreEqual(0, shownCount);
+				Assert.That(shownCount, Is.EqualTo(0));
 				form.Shown += (sender, e) => Application.Instance.AsyncInvoke(() =>
 				{
 					initialShownCount = shownCount;
@@ -121,8 +114,8 @@ namespace Eto.Test.UnitTests.Forms.Controls
 				});
 			});
 
-			Assert.AreEqual(0, initialShownCount, "#1"); // should not be initially called
-			Assert.AreEqual(1, shownCount, "#2");
+			Assert.That(initialShownCount, Is.EqualTo(0), "#1"); // should not be initially called
+			Assert.That(shownCount, Is.EqualTo(1), "#2");
 		}
 
 		[ManualTest, Test]
@@ -151,6 +144,7 @@ namespace Eto.Test.UnitTests.Forms.Controls
 								new FilePicker { FilePath = "/some/path/that/is/long/which/should/not/make/it/too/big" },
 								new GroupBox { Content = "Some content", Text = "Some text" },
 								new LinkButton {  Text = "LinkButton"},
+								new ListBox { Items = { "Item 1", "Item 2", "Item 3" } },
 								new NumericStepper(),
 								new PasswordBox(),
 								new ProgressBar { Value = 50 },
@@ -184,6 +178,8 @@ namespace Eto.Test.UnitTests.Forms.Controls
 			}
 
 		}
+
+		static readonly ObservableCollection<object> s_longLivedDataStore = new ObservableCollection<object> { "Item 1", "Item 2" };
 
 		public static ControlGCTest GCTest<T>(Action<T> action) => new ControlGCTest { ControlType = typeof(T), Test = c => action((T)c) };
 
@@ -233,6 +229,15 @@ namespace Eto.Test.UnitTests.Forms.Controls
 				c.Step += (sender, e) => { /* do something */ };
 			});
 
+			// a data store that outlives the control (e.g. on a view model) should not keep it alive
+			yield return GCTest("With long lived DataStore", (DropDown c) => c.DataStore = s_longLivedDataStore);
+			yield return GCTest("With long lived DataStore", (ComboBox c) => c.DataStore = s_longLivedDataStore);
+			yield return GCTest("With long lived DataStore", (ListBox c) => c.DataStore = s_longLivedDataStore);
+			yield return GCTest("With long lived DataStore", (CheckBoxList c) => c.DataStore = s_longLivedDataStore);
+			yield return GCTest("With long lived DataStore", (RadioButtonList c) => c.DataStore = s_longLivedDataStore);
+			yield return GCTest("With long lived DataStore", (GridView c) => c.DataStore = s_longLivedDataStore);
+			yield return GCTest("With FilterCollection of long lived collection", (GridView c) => c.DataStore = new FilterCollection<object>(s_longLivedDataStore));
+
 			yield return GCTest("With Panels", (Splitter c) =>
 			{
 				c.Panel1 = new Panel();
@@ -251,12 +256,62 @@ namespace Eto.Test.UnitTests.Forms.Controls
 				reference = new WeakReference(obj);
 				obj = null;
 			});
-			Thread.Sleep(100);
-			GC.Collect();
-			GC.WaitForPendingFinalizers();
-			Assert.IsNotNull(reference);
-			Assert.IsNull(reference.Target);
-			Assert.IsFalse(reference.IsAlive);
+			// Some platforms only drop their own reference to the control once a posted message has been
+			// processed, so retry for a short while instead of always paying a fixed delay - this test has
+			// ~60 cases, so an unconditional sleep here is a large chunk of the whole suite's runtime.
+			for (int i = 0; ; i++)
+			{
+				GC.Collect();
+				GC.WaitForPendingFinalizers();
+				if (reference?.IsAlive != true || i >= 10)
+					break;
+				Thread.Sleep(10);
+			}
+			Assert.That(reference, Is.Not.Null);
+			Assert.That(reference.Target, Is.Null);
+			Assert.That(reference.IsAlive, Is.False);
+		}
+
+		class ListenerTrackingCollection : ObservableCollection<object>
+		{
+			readonly List<NotifyCollectionChangedEventHandler> _handlers = new List<NotifyCollectionChangedEventHandler>();
+
+			public override event NotifyCollectionChangedEventHandler CollectionChanged
+			{
+				add { lock (_handlers) _handlers.Add(value); base.CollectionChanged += value; }
+				remove { lock (_handlers) _handlers.Remove(value); base.CollectionChanged -= value; }
+			}
+
+			// Native toolkits (e.g. WPF's ItemsSource) can subscribe too, and clean up on their own schedule.
+			public int EtoListenerCount
+			{
+				get { lock (_handlers) return _handlers.Count(h => h.Target?.GetType().Namespace?.StartsWith("Eto", StringComparison.Ordinal) == true); }
+			}
+		}
+
+		[TestCase(typeof(DropDown))]
+		[TestCase(typeof(ComboBox))]
+		[TestCase(typeof(ListBox))]
+		[TestCase(typeof(CheckBoxList))]
+		[TestCase(typeof(RadioButtonList))]
+		[TestCase(typeof(GridView))]
+		public void LongLivedDataStoreShouldDropListenersWhenControlIsCollected(Type controlType)
+		{
+			var store = new ListenerTrackingCollection { "Item 1", "Item 2" };
+			Invoke(() =>
+			{
+				var control = Activator.CreateInstance(controlType);
+				controlType.GetProperty("DataStore").SetValue(control, store);
+			});
+			// The collection never changes, so only the control being collected can remove its listener.
+			for (int i = 0; store.EtoListenerCount > 0 && i < 20; i++)
+			{
+				GC.Collect();
+				GC.WaitForPendingFinalizers();
+				Invoke(() => Application.Instance.RunIteration());
+				Thread.Sleep(10);
+			}
+			Assert.That(store.EtoListenerCount, Is.EqualTo(0));
 		}
 
 		[TestCaseSource(nameof(GetControlTypes))]
@@ -267,11 +322,11 @@ namespace Eto.Test.UnitTests.Forms.Controls
 				var control = info.CreateControl();
 				if (control is CommonControl commonControl)
 				{
-					Assert.IsNotNull(commonControl.Font);
+					Assert.That(commonControl.Font, Is.Not.Null);
 				}
 				else if (control is GroupBox groupBox)
 				{
-					Assert.IsNotNull(groupBox.Font);
+					Assert.That(groupBox.Font, Is.Not.Null);
 				}
 				else
 				{
@@ -298,17 +353,37 @@ namespace Eto.Test.UnitTests.Forms.Controls
 			});
 		}
 
+		[Test]
+		public void ScreenConversionsShouldIncludeChildLayoutOffset()
+		{
+			PixelLayout child = null;
+			Shown(form =>
+			{
+				child = new PixelLayout { Size = new Size(80, 60) };
+				var layout = new PixelLayout();
+				layout.Add(child, 96, 96);
+				return layout;
+			}, layout =>
+			{
+				var origin = layout.PointToScreen(new PointF(96, 96));
+				Assert.That(Point.Round(child.PointToScreen(PointF.Empty) - origin), Is.EqualTo(Point.Empty));
+				Assert.That(Point.Round(child.PointFromScreen(origin)), Is.EqualTo(Point.Empty));
+			});
+		}
+
 		[Test, ManualTest]
 		public void PointToScreenShouldWorkOnSecondaryScreen()
 		{
 			bool wasClicked = false;
+			PointF? controlPoint = null;
+			PointF? rountripPoint = null;
 			Form childForm = null;
 			try
 			{
 				ManualForm("The Form with the button should be above the text box exactly.\nClick the button to pass the test, close the window to fail.", form =>
 				{
 					var screens = Screen.Screens.ToArray();
-					Assert.GreaterOrEqual(screens.Length, 2, "You must have a secondary monitor for this test");
+					Assert.That(screens.Length, Is.GreaterThanOrEqualTo(2), "You must have a secondary monitor for this test");
 					form.Location = Point.Round(screens[1].Bounds.Location) + new Size(50, 50);
 					form.ClientSize = new Size(200, 200);
 
@@ -316,6 +391,16 @@ namespace Eto.Test.UnitTests.Forms.Controls
 
 					form.Shown += (sender, e) =>
 					{
+						controlPoint = PointF.Empty;
+						var screenPoint = textBox.PointToScreen(PointF.Empty);
+						rountripPoint = Point.Truncate(textBox.PointFromScreen(screenPoint));
+						
+						if (controlPoint != rountripPoint)
+						{
+							form.Close();
+							return;
+						}
+						
 						childForm = new Form
 						{
 							WindowStyle = WindowStyle.None,
@@ -324,8 +409,13 @@ namespace Eto.Test.UnitTests.Forms.Controls
 							Resizable = false,
 							BackgroundColor = Colors.Red,
 							Topmost = true,
-							Location = Point.Round(textBox.PointToScreen(PointF.Empty)),
+							Location = Point.Round(screenPoint),
 							Size = textBox.Size
+						};
+						form.LocationChanged += (sender2, e2) =>
+						{
+							childForm.Location = Point.Round(textBox.PointToScreen(PointF.Empty));
+							childForm.Size = textBox.Size;
 						};
 						var b = new Button { Text = "Click Me!" };
 						b.Click += (sender2, e2) =>
@@ -351,23 +441,205 @@ namespace Eto.Test.UnitTests.Forms.Controls
 				if (childForm != null)
 					Application.Instance.Invoke(() => childForm.Close());
 			}
-			Assert.IsTrue(wasClicked, "The test completed without clicking the button");
+			Assert.That(rountripPoint, Is.EqualTo(controlPoint), "Point could not round trip to screen then back");
+			Assert.That(wasClicked, Is.True, "The test completed without clicking the button");
 		}
 
 		[TestCaseSource(nameof(GetControlTypes)), InvokeOnUI]
 		public void ControlsShouldHavePreferredSize(IControlTypeInfo<Control> info)
 		{
-			var control = info.CreatePopulatedControl();
-			var size = control.GetPreferredSize();
-			Console.WriteLine($"PreferredSize for {info.Type}: {size}");
-			Assert.Greater(size.Width, 0, "#1.1 - Preferred width should be greater than zero");
-			Assert.Greater(size.Height, 0, "#1.2 - Preferred height should be greater than zero");
+			SizeF size = default;
+			SizeF containerSize = default;
 			var padding = new Padding(10);
-			var container = new Panel { Content = control, Padding = padding };
-			var containerSize = container.GetPreferredSize();
-			Assert.That(containerSize.Width, Is.EqualTo(size.Width + padding.Horizontal).Within(0.1), "#2.1 - panel with padding should have correct width");
-			Assert.That(containerSize.Height, Is.EqualTo(size.Height + padding.Vertical).Within(0.1), "#2.2 - panel with padding should have correct height");
+			// GTK/GLib criticals are written directly to the native stderr, so capture it to ensure
+			// getting the preferred size of an unparented control doesn't emit any (e.g. the
+			// "gtk_widget_realize: assertion 'widget->priv->anchored...' failed" critical on Gtk).
+			var output = StandardErrorCapture.Capture(() =>
+			{
+				var control = info.CreatePopulatedControl();
+				size = control.GetPreferredSize();
+				Console.WriteLine($"PreferredSize for {info.Type}: {size}");
+				var container = new Panel { Content = control, Padding = padding };
+				containerSize = container.GetPreferredSize();
+			});
+			Assert.That(output, Does.Not.Contain("CRITICAL"), $"#1.1 - A critical warning was emitted while getting the preferred size:{Environment.NewLine}{output}");
+			Assert.That(size.Width, Is.GreaterThan(0), "#2.1 - Preferred width should be greater than zero");
+			Assert.That(size.Height, Is.GreaterThan(0), "#2.2 - Preferred height should be greater than zero");
+			Assert.That(containerSize.Width, Is.EqualTo(size.Width + padding.Horizontal).Within(0.1), "#3.1 - panel with padding should have correct width");
+			Assert.That(containerSize.Height, Is.EqualTo(size.Height + padding.Vertical).Within(0.1), "#3.2 - panel with padding should have correct height");
 		}
 
+		[ManualTest]
+		[TestCaseSource(nameof(GetControlTypes))]
+		public void ControlsShouldNotGetMouseOrFocusEventsWhenDisabled(IControlTypeInfo<Control> info)
+		{
+			ControlsShouldNotGetMouseOrFocusEventsWhenParentDisabled(info, false);
+		}
+		
+		[ManualTest]
+		[TestCaseSource(nameof(GetControlTypes))]
+		public void ControlsShouldNotGetMouseOrFocusEventsWhenParentDisabled(IControlTypeInfo<Control> info)
+		{
+			ControlsShouldNotGetMouseOrFocusEventsWhenParentDisabled(info, true);
+		}
+
+		public void ControlsShouldNotGetMouseOrFocusEventsWhenParentDisabled(IControlTypeInfo<Control> info, bool disableWithParent)
+		{
+			bool gotFocus = false;
+			bool gotMouseDown = false;
+			bool gotMouseUp = false;
+			bool gotMouseEnter = false;
+			bool gotMouseLeave = false;
+			ManualForm("Click on the control, it should not get focus", form =>
+			{
+				var control = info.CreatePopulatedControl();
+				if (!disableWithParent)
+					control.Enabled = false;
+
+				control.GotFocus += (sender, e) =>
+				{
+					Console.WriteLine("GotFocus");
+					gotFocus = true;
+				};
+				control.LostFocus += (sender, e) =>
+				{
+					Console.WriteLine("LostFocus");
+				};
+				control.MouseDown += (sender, e) =>
+				{
+					Console.WriteLine("MouseDown");
+					gotMouseDown = true;
+				};
+				control.MouseUp += (sender, e) =>
+				{
+					Console.WriteLine("MouseUp");
+					gotMouseUp = true;
+				};
+				control.MouseEnter += (sender, e) =>
+				{
+					Console.WriteLine("MouseEnter");
+					gotMouseEnter = true;
+				};
+				control.MouseLeave += (sender, e) =>
+				{
+					Console.WriteLine("MouseLeave");
+					gotMouseLeave = true;
+				};
+
+				var panel = new Panel { Content = control };
+				if (disableWithParent)
+					panel.Enabled = false;
+				return panel;
+			});
+			Assert.That(gotFocus, Is.False, "#1.1 - Control should not be able to get focus");
+			Assert.That(gotMouseEnter, Is.False, "#1.2 - Got MouseEnter");
+			Assert.That(gotMouseLeave, Is.False, "#1.3 - Got MouseLeave");
+			Assert.That(gotMouseDown, Is.False, "#1.4 - Got MouseDown");
+			Assert.That(gotMouseUp, Is.False, "#1.5 - Got MouseUp");
+		}
+		
+		[ManualTest]
+		[TestCaseSource(nameof(GetControlTypes))]
+		public void ControlShouldFireMouseLeaveIfEnteredThenDisabled(IControlTypeInfo<Control> info)
+		{
+			int mouseLeaveCalled = 0;
+			int mouseEnterCalled = 0;
+			bool mouseLeaveCalledBeforeMouseDown = false;
+			bool mouseLeaveCalledAfterDisabled = false;
+			int mouseDownCalled = 0;
+			bool formClosing = false;
+			bool mouseLeaveCalledAfterFormClosed = false;
+			int enabledChanged = 0;
+			bool enabledChangedFiredAfterMouseLeave = false;
+			ManualForm("Click on the control", form =>
+			{
+				form.Closing += (sender, e) =>
+				{
+					formClosing = true;
+				};
+
+				var control = info.CreatePopulatedControl();
+				control.MouseEnter += (sender, e) =>
+				{
+					mouseEnterCalled++;
+				};
+				control.MouseLeave += (sender, e) =>
+				{
+					mouseLeaveCalled++;
+					mouseLeaveCalledAfterFormClosed |= formClosing;
+					if (mouseDownCalled > 0)
+						Application.Instance.AsyncInvoke(form.Close);
+				};
+				control.MouseDown += (sender, e) =>
+				{
+					mouseDownCalled++;
+					mouseLeaveCalledBeforeMouseDown = mouseLeaveCalled > 0;
+					control.Enabled = false;
+					mouseLeaveCalledAfterDisabled = mouseLeaveCalled > 0;
+					e.Handled = true;
+				};
+				control.EnabledChanged += (sender, e) =>
+				{
+					enabledChanged++;
+					enabledChangedFiredAfterMouseLeave = mouseLeaveCalled > 0;
+
+				};
+				return control;
+			});
+			Assert.That(mouseEnterCalled, Is.EqualTo(1), "#1.1 - MouseEnter should be called exactly once");
+			Assert.That(mouseLeaveCalled, Is.EqualTo(1), "#1.2 - MouseLeave should be called exactly once");
+			Assert.That(mouseLeaveCalledBeforeMouseDown, Is.False, "#1.3 - MouseLeave should not have been called before MouseDown");
+			Assert.That(mouseLeaveCalledAfterDisabled, Is.False, "#1.4 - MouseLeave should not be called during Enabled=false, but sometime after the MouseDown completes");
+			Assert.That(mouseDownCalled, Is.EqualTo(1), "#1.5 - MouseDown should get called exactly once.  Did you click the control?");
+			Assert.That(mouseLeaveCalledAfterFormClosed, Is.False, "#1.6 - MouseLeave should be called immediately when clicked, not when the form is closed");
+			Assert.That(enabledChanged, Is.EqualTo(1), "#1.7 - EnabledChanged should be called exactly once");
+			Assert.That(enabledChangedFiredAfterMouseLeave, Is.False, "#1.8 - MouseLeave should be fired after EnabledChanged event");
+		}
+
+		[ManualTest]
+		[TestCaseSource(nameof(GetControlTypes))]
+		public void ControlShouldFireMouseLeaveWhenUnloaded(IControlTypeInfo<Control> info)
+		{
+			int mouseLeaveCalled = 0;
+			int mouseEnterCalled = 0;
+			bool mouseLeaveCalledBeforeMouseDown = false;
+			int mouseDownCalled = 0;
+			bool formClosing = false;
+			bool mouseLeaveCalledAfterFormClosed = false;
+			ManualForm("Click on the control", form =>
+			{
+				form.Closing += (sender, e) =>
+				{
+					formClosing = true;
+				};
+
+				var control = info.CreatePopulatedControl();
+				control.MouseEnter += (sender, e) =>
+				{
+					mouseEnterCalled++;
+				};
+				control.MouseLeave += (sender, e) =>
+				{
+					mouseLeaveCalled++;
+					mouseLeaveCalledAfterFormClosed |= formClosing;
+					if (mouseDownCalled > 0)
+						Application.Instance.AsyncInvoke(form.Close);
+				};
+				control.MouseDown += (sender, e) =>
+				{
+					mouseDownCalled++;
+					mouseLeaveCalledBeforeMouseDown = mouseLeaveCalled > 0;
+					e.Handled = true;
+
+					control.VisualParent.Remove(control);
+				};
+				return control;
+			});
+			Assert.That(mouseEnterCalled, Is.EqualTo(1), "#1.1 - MouseEnter should be called exactly once");
+			Assert.That(mouseLeaveCalled, Is.EqualTo(1), "#1.2 - MouseLeave should be called exactly once");
+			Assert.That(mouseLeaveCalledBeforeMouseDown, Is.False, "#1.3 - MouseLeave should not have been called before MouseDown");
+			Assert.That(mouseDownCalled, Is.EqualTo(1), "#1.5 - MouseDown should get called exactly once.  Did you click the control?");
+			Assert.That(mouseLeaveCalledAfterFormClosed, Is.False, "#1.6 - MouseLeave should be called immediately when clicked, not when the form is closed");
+		}
 	}
 }

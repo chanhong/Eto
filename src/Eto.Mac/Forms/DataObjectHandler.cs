@@ -1,42 +1,4 @@
-﻿using System;
-using Eto.Forms;
-using Eto.Drawing;
-using System.IO;
-using Eto.Mac.Drawing;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Collections.Generic;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using MobileCoreServices;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.MobileCoreServices;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
+﻿using Eto.Mac.Drawing;
 namespace Eto.Mac.Forms
 {
 	public class DataFormatsHandler : DataFormats.IHandler
@@ -70,6 +32,8 @@ namespace Eto.Mac.Forms
 		where TCallback : Widget.ICallback
 	{
 		nint _changeCount;
+
+		public override IntPtr NativeHandle => Control.Handle;
 
 		void ClearIfNeeded()
 		{
@@ -187,7 +151,7 @@ namespace Eto.Mac.Forms
 						return objs.OfType<NSUrl>().Select(UrlToUri).ToArray();
 				}
 
-				var availableType = Control.GetAvailableTypeFromArray(new string[] { NSPasteboard.NSFilenamesType });
+				var availableType = Control.GetAvailableTypeFromArray(new string[] { NSPasteboard.NSPasteboardTypeFileUrl });
 				if (availableType != null)
 				{
 					// old-school way of passing files
@@ -233,12 +197,37 @@ namespace Eto.Mac.Forms
 			return Control.GetAvailableTypeFromArray(new[] { type }) != null;
 		}
 
-		public bool TryGetObject(string type, out object value)
+		public bool TryGetObject(string type, Type objectType, out object value)
 		{
-			if (type == NSPasteboard.NSPasteboardTypeColor)
+			if (objectType == null || objectType == typeof(Color))
 			{
-				value = NSColor.FromPasteboard(Control)?.ToEto();
-				return true;
+				if (type == NSPasteboard.NSPasteboardTypeColor)
+				{
+					value = NSColor.FromPasteboard(Control)?.ToEto();
+					return true;
+				}
+			}
+			if (objectType == null || objectType == typeof(string))
+			{
+				if (type == NSPasteboard.NSPasteboardTypeString
+					|| type == NSPasteboard.NSPasteboardTypeTabularText
+					|| type == NSPasteboard.NSPasteboardTypeUrl
+					|| type == NSPasteboard.NSPasteboardTypeFileUrl
+					|| type == NSPasteboard.NSPasteboardTypeRTF
+					|| type == NSPasteboard.NSPasteboardTypeHTML)
+				{
+					value = GetString(type);
+					return true;
+				}
+			}
+			if (objectType == null || objectType == typeof(Bitmap))
+			{
+				if (type == NSPasteboard.NSPasteboardTypeTIFF
+					|| type == NSPasteboard.NSPasteboardTypePNG)
+				{
+					value = new Bitmap(new MemoryStream(GetData(type)));
+					return true;
+				}
 			}
 			value = null;
 			return false;
@@ -257,5 +246,7 @@ namespace Eto.Mac.Forms
 		public void SetObject(object value, string type) => Widget.SetObject(value, type);
 
 		public T GetObject<T>(string type) => Widget.GetObject<T>(type);
+		public object GetObject(string type, Type objectType) => Widget.GetObject(type, objectType);
+		public object GetObject(string type) => Widget.GetObject(type);
 	}
 }

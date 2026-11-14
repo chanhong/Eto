@@ -1,7 +1,5 @@
-﻿using System;
-using NUnit.Framework;
-using Eto.Forms;
-
+﻿using NUnit.Framework;
+using System.Data;
 namespace Eto.Test.UnitTests.Forms.Bindings
 {
 	[TestFixture]
@@ -16,16 +14,16 @@ namespace Eto.Test.UnitTests.Forms.Bindings
 			int changed = 0;
 			binding.AddValueChangedHandler(item, (sender, e) => changed++);
 
-			Assert.AreEqual(0, changed);
-			Assert.AreEqual(0, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(0));
+			Assert.That(binding.GetValue(item), Is.EqualTo(0));
 
 			item.IntProperty = 2;
-			Assert.AreEqual(1, changed);
-			Assert.AreEqual(2, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(1));
+			Assert.That(binding.GetValue(item), Is.EqualTo(2));
 
 			item.IntProperty = 4;
-			Assert.AreEqual(2, changed);
-			Assert.AreEqual(4, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(2));
+			Assert.That(binding.GetValue(item), Is.EqualTo(4));
 		}
 
 		[Test]
@@ -40,20 +38,20 @@ namespace Eto.Test.UnitTests.Forms.Bindings
 			BindObject oldChild;
 
 			item.ChildBindObject = oldChild = new BindObject();
-			Assert.AreEqual(1, changed);
-			Assert.AreEqual(0, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(1));
+			Assert.That(binding.GetValue(item), Is.EqualTo(0));
 
 			item.ChildBindObject.IntProperty = 2;
-			Assert.AreEqual(2, changed);
-			Assert.AreEqual(2, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(2));
+			Assert.That(binding.GetValue(item), Is.EqualTo(2));
 
 			item.ChildBindObject = new BindObject { IntProperty = 3 };
-			Assert.AreEqual(3, changed);
-			Assert.AreEqual(3, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(3));
+			Assert.That(binding.GetValue(item), Is.EqualTo(3));
 
 			oldChild.IntProperty = 4; // we should not be hooked into change events of the old child, since we have a new one now!
-			Assert.AreEqual(3, changed);
-			Assert.AreEqual(3, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(3));
+			Assert.That(binding.GetValue(item), Is.EqualTo(3));
 		}
 
 		[Test]
@@ -68,20 +66,20 @@ namespace Eto.Test.UnitTests.Forms.Bindings
 			BindObject oldChild;
 
 			item.ChildBindObject = oldChild = new BindObject();
-			Assert.AreEqual(1, changed);
-			Assert.AreEqual(0, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(1));
+			Assert.That(binding.GetValue(item), Is.EqualTo(0));
 
 			item.ChildBindObject.IntProperty = 2;
-			Assert.AreEqual(2, changed);
-			Assert.AreEqual(2, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(2));
+			Assert.That(binding.GetValue(item), Is.EqualTo(2));
 
 			item.ChildBindObject = new BindObject { IntProperty = 3 };
-			Assert.AreEqual(3, changed);
-			Assert.AreEqual(3, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(3));
+			Assert.That(binding.GetValue(item), Is.EqualTo(3));
 
 			oldChild.IntProperty = 4; // we should not be hooked into change events of the old child, since we have a new one now!
-			Assert.AreEqual(3, changed);
-			Assert.AreEqual(3, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(3));
+			Assert.That(binding.GetValue(item), Is.EqualTo(3));
 		}
 
 		[Test]
@@ -96,20 +94,20 @@ namespace Eto.Test.UnitTests.Forms.Bindings
 			BindObject oldChild;
 
 			item.ChildBindObject = oldChild = new BindObject();
-			Assert.AreEqual(1, changed);
-			Assert.AreEqual(0, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(1));
+			Assert.That(binding.GetValue(item), Is.EqualTo(0));
 
 			item.ChildBindObject.IntProperty = 2;
-			Assert.AreEqual(2, changed);
-			Assert.AreEqual(2, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(2));
+			Assert.That(binding.GetValue(item), Is.EqualTo(2));
 
 			item.ChildBindObject = new BindObject { IntProperty = 3 };
-			Assert.AreEqual(3, changed);
-			Assert.AreEqual(3, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(3));
+			Assert.That(binding.GetValue(item), Is.EqualTo(3));
 
 			oldChild.IntProperty = 4; // we should not be hooked into change events of the old child, since we have a new one now!
-			Assert.AreEqual(3, changed);
-			Assert.AreEqual(3, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(3));
+			Assert.That(binding.GetValue(item), Is.EqualTo(3));
 		}
 
 		[Test]
@@ -122,8 +120,8 @@ namespace Eto.Test.UnitTests.Forms.Bindings
 			EventHandler<EventArgs> valueChanged = (sender, e) => changed++;
 			var changeReference = binding.AddValueChangedHandler(item, valueChanged);
 
-			Assert.AreEqual(0, changed);
-			Assert.AreEqual(null, binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(0));
+			Assert.That(binding.GetValue(item), Is.EqualTo(null));
 			Assert.DoesNotThrow(() => binding.SetValue(item, 123));
 			binding.RemoveValueChangedHandler(changeReference, valueChanged);
 		}
@@ -138,12 +136,114 @@ namespace Eto.Test.UnitTests.Forms.Bindings
 			EventHandler<EventArgs> valueChanged = (sender, e) => changed++;
 			var changeReference = binding.AddValueChangedHandler(item, valueChanged);
 
-			Assert.AreEqual(0, changed);
-			Assert.AreEqual("some value", binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(0));
+			Assert.That(binding.GetValue(item), Is.EqualTo("some value"));
 			Assert.DoesNotThrow(() => binding.SetValue(item, "some other value"));
-			Assert.AreEqual(1, changed);
-			Assert.AreEqual("some other value", binding.GetValue(item));
+			Assert.That(changed, Is.EqualTo(1));
+			Assert.That(binding.GetValue(item), Is.EqualTo("some other value"));
 			binding.RemoveValueChangedHandler(changeReference, valueChanged);
+		}
+
+		class MyCustomDescriptorClass : ICustomTypeDescriptor
+		{
+			Dictionary<object, object> _properties = new Dictionary<object, object> 
+			{
+				{ "FirstProperty", "Initial Value" },
+				{ "SecondProperty", true }
+			};
+			
+			PropertyDescriptorCollection _propertyDescriptorCollection;
+			
+			public string NonTypeDescriptorProperty { get; set; } = "Initial Other Value";
+			
+
+			AttributeCollection ICustomTypeDescriptor.GetAttributes() => sc.TypeDescriptor.GetAttributes(this);
+
+			string ICustomTypeDescriptor.GetClassName() => sc.TypeDescriptor.GetClassName(this);
+
+			string ICustomTypeDescriptor.GetComponentName() => sc.TypeDescriptor.GetComponentName(this);
+
+			System.ComponentModel.TypeConverter ICustomTypeDescriptor.GetConverter() => sc.TypeDescriptor.GetConverter(this);
+
+			EventDescriptor ICustomTypeDescriptor.GetDefaultEvent() => sc.TypeDescriptor.GetDefaultEvent(this);
+
+			PropertyDescriptor ICustomTypeDescriptor.GetDefaultProperty() => sc.TypeDescriptor.GetDefaultProperty(this);
+
+			object ICustomTypeDescriptor.GetEditor(Type editorBaseType) => sc.TypeDescriptor.GetEditor(this, editorBaseType);
+
+			EventDescriptorCollection ICustomTypeDescriptor.GetEvents() => sc.TypeDescriptor.GetEvents(this);
+
+			EventDescriptorCollection ICustomTypeDescriptor.GetEvents(Attribute[] attributes) => sc.TypeDescriptor.GetEvents(this, attributes);
+
+			PropertyDescriptorCollection ICustomTypeDescriptor.GetProperties() => GetProperties(null);
+
+			PropertyDescriptorCollection ICustomTypeDescriptor.GetProperties(Attribute[] attributes) => GetProperties(attributes);
+
+			private PropertyDescriptorCollection GetProperties(Attribute[] attributes)
+			{
+				if (_propertyDescriptorCollection != null)
+					return _propertyDescriptorCollection;
+				var props = new List<PropertyDescriptor>();
+				props.Add(new MyPropertyDescriptor<string>("FirstProperty"));
+				props.Add(new MyPropertyDescriptor<bool>("SecondProperty"));
+				_propertyDescriptorCollection = new PropertyDescriptorCollection(props.ToArray());
+				return _propertyDescriptorCollection;
+			}
+
+			object ICustomTypeDescriptor.GetPropertyOwner(PropertyDescriptor pd) => this;
+
+			class MyPropertyDescriptor<T> : sc.PropertyDescriptor
+			{
+				public MyPropertyDescriptor(string name) : base(name, null)
+				{
+				}
+
+				public override Type ComponentType => typeof(MyCustomDescriptorClass);
+
+				public override bool IsReadOnly => false;
+
+				public override Type PropertyType => typeof(T);
+
+				public override bool CanResetValue(object component) => false;
+
+				public override object GetValue(object component) => ((MyCustomDescriptorClass)component)._properties[Name];
+
+				public override void ResetValue(object component)
+				{
+				}
+
+				public override void SetValue(object component, object value) => ((MyCustomDescriptorClass)component)._properties[Name] = value;
+
+				public override bool ShouldSerializeValue(object component) => false;
+			}
+		}
+
+		[Test]
+		public void PropertyBindingsShouldUseDescriptors()
+		{
+			var item = new MyCustomDescriptorClass();
+
+			var stringBinding = Eto.Forms.Binding.Property<string>("FirstProperty");
+			var boolBinding = Eto.Forms.Binding.Property<bool>("SecondProperty");
+			var invalidBinding = Eto.Forms.Binding.Property<string>("ThirdInvalidProperty");
+			var propertyInfoBinding = Eto.Forms.Binding.Property<string>("NonTypeDescriptorProperty");
+			
+			Assert.That(stringBinding.GetValue(item), Is.EqualTo("Initial Value"));
+			stringBinding.SetValue(item, "Some Value");
+			Assert.That(stringBinding.GetValue(item), Is.EqualTo("Some Value"));
+
+			Assert.That(boolBinding.GetValue(item), Is.EqualTo(true));
+			boolBinding.SetValue(item, false);
+			Assert.That(boolBinding.GetValue(item), Is.EqualTo(false));
+			
+			Assert.That(invalidBinding.GetValue(item), Is.Null);
+			invalidBinding.SetValue(item, "something");
+			Assert.That(invalidBinding.GetValue(item), Is.Null);
+			
+			// ensure properties can also be accessed without descriptors
+			Assert.That(propertyInfoBinding.GetValue(item), Is.EqualTo("Initial Other Value"));
+			propertyInfoBinding.SetValue(item, "Some Other Value");
+			Assert.That(propertyInfoBinding.GetValue(item), Is.EqualTo("Some Other Value"));
 		}
 	}
 }

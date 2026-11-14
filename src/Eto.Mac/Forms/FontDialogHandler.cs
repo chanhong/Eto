@@ -1,20 +1,4 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.Mac.Drawing;
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#endif
 
 namespace Eto.Mac.Forms
 {
@@ -49,7 +33,9 @@ namespace Eto.Mac.Forms
 
 		void Cleanup()
 		{
+#pragma warning disable CA1422 // Validate platform compatibility
 			NSFontManager.SharedFontManager.WeakDelegate = null;
+#pragma warning restore CA1422 // Validate platform compatibility
 			NSFontPanel.SharedFontPanel.Delegate = null;
 			FontDialogHelper.Instance = null;
 		}
@@ -120,7 +106,9 @@ namespace Eto.Mac.Forms
 			manager.Target = null;
 			manager.Action = new Selector("changeFont:"); // in case it was set to something else
 			Control.Delegate = helper;
+#pragma warning disable CA1422 // Validate platform compatibility
 			manager.WeakDelegate = helper; // using the delegate makes it work with modal dialogs, see: https://stackoverflow.com/a/9506984/981187
+#pragma warning restore CA1422 // Validate platform compatibility
 			manager.SetSelectedFont(selectedFont, false);
 
 			manager.OrderFrontFontPanel(parentWindow);

@@ -1,18 +1,16 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using swc = System.Windows.Controls;
-using sw = System.Windows;
-using swm = System.Windows.Media;
-using Eto.Forms;
-using Eto.Drawing;
-using swi = System.Windows.Input;
 using Eto.Wpf.Drawing;
 
 namespace Eto.Wpf.Forms.Controls
 {
-	public class DrawableHandler : WpfPanel<swc.Canvas, Drawable, Drawable.ICallback>, Drawable.IHandler
+	public class DrawableHandler : DrawableHandler<swc.Canvas, Drawable, Drawable.ICallback> { }
+
+	public class DrawableHandler<TControl, TWidget, TCallback> : WpfPanel<TControl, TWidget, TCallback>, Drawable.IHandler
+	where TControl : swc.Canvas
+	where TWidget : Drawable
+	where TCallback : Drawable.ICallback
 	{
+		TextStore textStore;
+		bool usesTextStore;
 		bool tiled;
 		sw.FrameworkElement content;
 		Scrollable scrollable;
@@ -30,6 +28,8 @@ namespace Eto.Wpf.Forms.Controls
 		}
 
 		public bool AllowTiling { get; set; }
+
+		public bool PartialInvalidate { get; set; }
 
 		public bool SupportsCreateGraphics { get { return false; } }
 
@@ -51,9 +51,9 @@ namespace Eto.Wpf.Forms.Controls
 			}
 		}
 
-		class EtoMainCanvas : swc.Canvas
+		public class EtoMainCanvas : swc.Canvas
 		{
-			public DrawableHandler Handler { get; set; }
+			public DrawableHandler<TControl, TWidget, TCallback> Handler { get; set; }
 
 			protected override void OnMouseDown(sw.Input.MouseButtonEventArgs e)
 			{
@@ -70,29 +70,28 @@ namespace Eto.Wpf.Forms.Controls
 				if (!Handler.tiled)
 				{
 					var rect = new sw.Rect(0, 0, ActualWidth, ActualHeight);
-					var cliprect = rect.ToEto();
-					if (!cliprect.IsEmpty)
+					if (!rect.IsEmpty)
 					{
-						using (var graphics = new Graphics(new GraphicsHandler(this, dc, rect, new RectangleF(Handler.ClientSize), false)))
-						{
-							Handler.Callback.OnPaint(Handler.Widget, new PaintEventArgs(graphics, cliprect));
-						}
+						Handler.Render(this, dc, rect);
 					}
 				}
 			}
 
 			protected override sw.Size MeasureOverride(sw.Size constraint)
 			{
+				return Handler.MeasureOverride(constraint, ContentMeasureOverride);
+			}
+
+			private sw.Size ContentMeasureOverride(sw.Size constraint)
+			{
+				var size = base.MeasureOverride(constraint);
 				var content = Handler.content;
-				if (content != null)
-				{
-					content.Measure(constraint);
-					return Handler.MeasureOverride(constraint, c => {
-						base.MeasureOverride(c);
-						return content.DesiredSize;
-						});
-				}
-				return Handler.MeasureOverride(constraint, base.MeasureOverride);
+				if (content == null)
+					return size;
+
+				// content should be used to measure, if present		
+				content.Measure(constraint);
+				return content.DesiredSize;
 			}
 
 			protected override sw.Size ArrangeOverride(sw.Size arrangeSize)
@@ -105,10 +104,26 @@ namespace Eto.Wpf.Forms.Controls
 			}
 		}
 
+		private void Render(swm.Visual canvas, swm.DrawingContext dc, sw.Rect rect)
+		{
+			var cliprect = rect.ToEtoF();
+			if (PartialInvalidate && scrollable != null)
+			{
+				var visibleRect = new RectangleF(scrollable.VisibleRect.Size);
+				visibleRect = scrollable.RectangleToScreen(visibleRect);
+				visibleRect = Widget.RectangleFromScreen(visibleRect);
+				cliprect.Intersect(visibleRect);
+			}
+			using (var graphics = new Graphics(new GraphicsHandler(canvas, dc, rect, cliprect, false)))
+			{
+				Callback.OnPaint(Widget, new PaintEventArgs(graphics, cliprect));
+			}
+		}
+
 		class EtoTile : sw.FrameworkElement
 		{
 			Rectangle bounds;
-			public DrawableHandler Handler { get; set; }
+			public DrawableHandler<TControl, TWidget, TCallback> Handler { get; set; }
 
 			public Rectangle Bounds
 			{
@@ -139,54 +154,159 @@ namespace Eto.Wpf.Forms.Controls
 			}
 		}
 
-		protected override bool NeedsPixelSizeNotifications {  get { return true; } }
+		protected override bool NeedsPixelSizeNotifications { get { return true; } }
 
 		public override void OnLoadComplete(EventArgs e)
 		{
 			base.OnLoadComplete(e);
 
 			RegisterScrollable();
+			EnsureTextStore();
+			textStore?.Attach();
 		}
 
 		protected override void OnLogicalPixelSizeChanged()
 		{
 			if (Control.IsLoaded)
 				Invalidate(false);
+			NotifyTextStoreLayoutChanged();
 		}
 
 		public override void OnUnLoad(EventArgs e)
 		{
 			base.OnUnLoad(e);
 			UnRegisterScrollable();
+			DisposeTextStore();
 		}
 
-		public void Create()
+		protected override TControl CreateControl()
 		{
-			Control = new EtoMainCanvas
+			return new EtoMainCanvas
 			{
 				Handler = this,
 				SnapsToDevicePixels = true,
 				FocusVisualStyle = null,
 				Background = swm.Brushes.Transparent
-			};
-			Control.Loaded += Control_Loaded;
+			} as TControl;
 		}
+
+		protected override void Initialize()
+		{
+			base.Initialize();
+
+			Control.Loaded += Control_Loaded;
+			Control.GotKeyboardFocus += Control_GotKeyboardFocus;
+			Control.LostKeyboardFocus += Control_LostKeyboardFocus;
+		}
+
+		public void Create() { }
 
 		public void Create(bool largeCanvas)
 		{
-			AllowTiling = largeCanvas;
+			// AllowTiling = largeCanvas;
+			PartialInvalidate = largeCanvas;
 			Create();
 		}
 
 		void Control_Loaded(object sender, sw.RoutedEventArgs e)
 		{
 			UpdateTiles(true);
+			textStore?.Attach();
 			Control.Loaded -= Control_Loaded; // only perform once
-        }
+		}
+
+		void Control_GotKeyboardFocus(object sender, swi.KeyboardFocusChangedEventArgs e)
+		{
+			if (!CanFocus)
+				return;
+
+			EnsureTextStore();
+			textStore?.Attach();
+			textStore?.SetFocused(true);
+		}
+
+		void Control_LostKeyboardFocus(object sender, swi.KeyboardFocusChangedEventArgs e)
+		{
+			textStore?.SetFocused(false);
+		}
+
+		void EnsureTextStore()
+		{
+			if (!usesTextStore || !CanFocus || textStore != null)
+				return;
+
+			textStore = new TextStore(Control, HandleTextStoreCommit, HandleTextStoreComposition, GetInputMethodBounds);
+		}
+
+		void DisposeTextStore()
+		{
+			if (textStore == null)
+				return;
+
+			textStore.Dispose();
+			textStore = null;
+		}
+
+		void NotifyTextStoreLayoutChanged()
+		{
+			textStore?.NotifyLayoutChanged();
+		}
+
+		void HandleTextStoreCommit(string text)
+		{
+			if (string.IsNullOrEmpty(text))
+				return;
+
+			var args = new TextInputEventArgs(text);
+			Callback.OnTextInput(Widget, args);
+		}
+
+		void HandleTextStoreComposition(string text, bool isActive)
+		{
+			var args = new TextCompositionEventArgs(text, isActive);
+			Callback.OnTextComposition(Widget, args);
+			Invalidate(false);
+			NotifyTextStoreLayoutChanged();
+		}
+
+		RectangleF? GetInputMethodBounds()
+		{
+			var args = new TextInsertionBoundsEventArgs();
+			Callback.OnTextInsertionBoundsRequested(Widget, args);
+			return args.Bounds;
+		}
+
+		public override void AttachEvent(string id)
+		{
+			switch (id)
+			{
+				case Drawable.TextCompositionEvent:
+				case Drawable.TextInsertionBoundsRequestedEvent:
+					usesTextStore = true;
+					EnsureTextStore();
+					textStore?.Attach();
+					if (Control.IsKeyboardFocusWithin)
+						textStore?.SetFocused(true);
+					break;
+				default:
+					base.AttachEvent(id);
+					break;
+			}
+		}
 
 		public virtual Graphics CreateGraphics()
 		{
 			throw new NotSupportedException();
+		}
+
+		public void CancelTextComposition()
+		{
+			textStore?.CancelComposition();
+		}
+
+		public void CommitTextComposition()
+		{
+			textStore?.CommitComposition();
 		}
 
 		void Control_SizeChanged(object sender, sw.SizeChangedEventArgs e)
@@ -196,6 +316,7 @@ namespace Eto.Wpf.Forms.Controls
 			Invalidate(false);
 			content.Width = e.NewSize.Width;
 			content.Height = e.NewSize.Height;
+			NotifyTextStoreLayoutChanged();
 		}
 
 		void SetMaxTiles()
@@ -230,12 +351,14 @@ namespace Eto.Wpf.Forms.Controls
 		void RegisterScrollable()
 		{
 			UnRegisterScrollable();
-			if (AllowTiling)
+			if (AllowTiling || PartialInvalidate)
 			{
 				scrollable = Widget.FindParent<Scrollable>();
 				if (scrollable != null)
 					scrollable.Scroll += scrollable_Scroll;
-
+			}
+			if (AllowTiling)
+			{
 				Control.SizeChanged += Control_SizeChanged;
 				SetMaxTiles();
 				tiled = true;
@@ -267,7 +390,7 @@ namespace Eto.Wpf.Forms.Controls
 			if (scroll != null)
 			{
 				// only show tiles in the visible rect of the scrollable
-				var visibleRect = new Rectangle(scroll.ClientSize);
+				var visibleRect = new Rectangle(scroll.VisibleRect.Size);
 				var scrollableHandler = (ScrollableHandler)scroll.Handler;
 				visibleRect.Offset(-Control.TranslatePoint(new sw.Point(), scrollableHandler.ContentControl).ToEtoPoint());
 				rect.Intersect(visibleRect);
@@ -358,7 +481,12 @@ namespace Eto.Wpf.Forms.Controls
 
 		void scrollable_Scroll(object sender, ScrollEventArgs e)
 		{
+			if (PartialInvalidate)
+			{
+				Invalidate(false);
+			}
 			UpdateTiles();
+			NotifyTextStoreLayoutChanged();
 		}
 
 		public override void Invalidate(bool invalidateChildren)

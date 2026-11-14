@@ -1,8 +1,4 @@
-using System;
 using UIKit;
-using Eto.Forms;
-using Eto.Drawing;
-
 namespace Eto.iOS.Forms.Controls
 {
 	public class SearchBoxHandler : IosView<UISearchBar, SearchBox, SearchBox.ICallback>, SearchBox.IHandler
@@ -79,6 +75,35 @@ namespace Eto.iOS.Forms.Controls
 			set { throw new NotImplementedException(); }
 		}
 
+		public int GetCharacterIndex(PointF location)
+		{
+			var textField = UIDevice.CurrentDevice.CheckSystemVersion(13, 0)
+				? Control.SearchTextField
+				: Control.ValueForKey(new Foundation.NSString("searchField")) as UITextField;
+			if (textField == null)
+				return 0;
+
+			var position = textField.GetClosestPosition(location.ToNS());
+			return position != null ? (int)textField.GetOffsetFromPosition(textField.BeginningOfDocument, position) : 0;
+		}
+
+		public PaddingF TextInset
+		{
+			get
+			{
+				var textField = UIDevice.CurrentDevice.CheckSystemVersion(13, 0)
+					? Control.SearchTextField
+					: Control.ValueForKey(new Foundation.NSString("searchField")) as UITextField;
+				if (textField == null)
+					return PaddingF.Empty;
+
+				// the text field sits inside the search bar, so measure its text area from the bar's edges
+				var bounds = Control.Bounds;
+				var text = textField.ConvertRectToView(textField.TextRect(textField.Bounds), Control);
+				return new PaddingF((float)(text.X - bounds.X), (float)(text.Y - bounds.Y), (float)(bounds.GetMaxX() - text.GetMaxX()), (float)(bounds.GetMaxY() - text.GetMaxY()));
+			}
+		}
+
 		public bool ShowBorder
 		{
 			get { throw new NotImplementedException(); }
@@ -92,4 +117,3 @@ namespace Eto.iOS.Forms.Controls
 		}
 	}
 }
-

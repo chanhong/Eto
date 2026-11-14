@@ -1,22 +1,19 @@
-﻿using Eto.Drawing;
-using Eto.Forms;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using swf = System.Windows.Forms;
-using sd = System.Drawing;
-
-namespace Eto.WinForms.Forms.Controls
+﻿namespace Eto.WinForms.Forms.Controls
 {
 	public class ColorPickerHandler : WindowsControl<swf.Button, ColorPicker, ColorPicker.ICallback>, ColorPicker.IHandler
 	{
 		public ColorPickerHandler()
 		{
-			Control = new swf.Button { Width = 40 };
+			Control = new swf.Button();
 			Control.Click += HandleClick;
 			Control.BackColor = sd.Color.Black;
 		}
+
+		public override Size? GetDefaultSize(Size availableSize)
+		{
+			return new Size(49, 24);
+		}
+
 
 		public override Color BackgroundColor
 		{

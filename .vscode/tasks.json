@@ -3,7 +3,7 @@
 	"tasks": [
 		{
 			"label": "build",
-			"command": "dotnet build ${config:var.buildProperties} /p:Configuration=${config:var.configuration} ${workspaceFolder}/build/Build.proj",
+			"command": "dotnet build ${config:var.buildProperties} /p:Configuration=${input:configuration} ${workspaceFolder}/build/Build.proj",
 			"type": "shell",
 			"problemMatcher": "$msCompile",
 			"group": {
@@ -15,21 +15,8 @@
 			}
 		},
 		{
-			"label": "build-addins",
-			"command": "msbuild /t:BuildAddins ${config:var.buildProperties} /p:Configuration=${config:var.configuration} ${workspaceFolder}/build/Build.proj",
-			"windows": {
-				"command": "${workspaceFolder}/build/msbuild.cmd /t:BuildAddins ${config:var.buildProperties} /p:Configuration=${config:var.configuration} ${workspaceFolder}/build/Build.proj"
-			},
-			"type": "shell",
-			"problemMatcher": "$msCompile",
-			"group": "build",
-			"presentation": {
-				"clear": true
-			}
-		},
-		{
 			"label": "build-templates",
-			"command": "dotnet build ${config:var.buildProperties} /p:Configuration=${config:var.configuration} ${workspaceFolder}/src/Addins/Eto.Forms.Templates/Eto.Forms.Templates.csproj ; dotnet new -i ${workspaceFolder}/",
+			"command": "dotnet build ${config:var.buildProperties} /p:Configuration=${config:var.configuration} ${workspaceFolder}/src/Eto.Forms.Templates/Eto.Forms.Templates.csproj",
 			"type": "shell",
 			"problemMatcher": "$msCompile",
 			"group": "build",
@@ -39,11 +26,29 @@
 		},
 		{
 			"label": "generate-templates",
-			"command": "dotnet msbuild ${workspaceFolder}/build/Build.proj /t:GenerateTemplates",
+			"command": "dotnet msbuild ${workspaceFolder}/build/Build.proj /t:GenerateTemplates -tl:off",
 			"type": "shell",
-			"dependsOn": [ "build-templates" ],
+			"dependsOn": [
+				"build-templates"
+			],
 			"problemMatcher": "$msCompile",
 			"group": "build",
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			// Restart VS Code afterwards so C# Dev Kit picks up the changes
+			"label": "install-templates",
+			"type": "shell",
+			"command": "dotnet new install \"$(ls -t ${workspaceFolder}/artifacts/nuget/${config:var.configuration}/Eto.Forms.Templates.*.nupkg | head -1)\" --force",
+			"windows": {
+				"command": "dotnet new install (Get-ChildItem ${workspaceFolder}/artifacts/nuget/${config:var.configuration}/Eto.Forms.Templates.*.nupkg | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName --force"
+			},
+			"dependsOn": [
+				"build-templates"
+			],
+			"problemMatcher": [],
 			"presentation": {
 				"clear": true
 			}
@@ -67,6 +72,30 @@
 				"kind": "build",
 				"isDefault": true
 			},
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			// installers are created on Release builds of each platform's test app
+			"label": "build-installers",
+			"type": "shell",
+			"command": "dotnet build ${config:var.buildProperties} /p:Configuration=Release ${workspaceFolder}/test/Eto.Test.Gtk/Eto.Test.Gtk.csproj",
+			"osx": {
+				"command": "dotnet build ${config:var.buildProperties} /p:Configuration=Release \"${workspaceFolder}/test/Eto.Test.Mac/Eto.Test.Mac64.csproj\" && dotnet build ${config:var.buildProperties} /p:Configuration=Release ${workspaceFolder}/test/Eto.Test.Mac/Eto.Test.macOS.csproj"
+			},
+			"windows": {
+				"command": "dotnet build ${config:var.buildProperties} /p:Configuration=Release ${workspaceFolder}/test/Eto.Test.Wpf/Eto.Test.Wpf.csproj && dotnet build ${config:var.buildProperties} /p:Configuration=Release ${workspaceFolder}/test/Eto.Test.WinForms/Eto.Test.WinForms.csproj",
+				// && isn't supported by Windows PowerShell 5.1, so don't depend on the user's default shell
+				"options": {
+					"shell": {
+						"executable": "cmd.exe",
+						"args": ["/d", "/c"]
+					}
+				}
+			},
+			"group": "build",
+			"problemMatcher": "$msCompile",
 			"presentation": {
 				"clear": true
 			}
@@ -102,8 +131,8 @@
 			}
 		},
 		{
-			"label": "build-xammac2",
-			"command": "dotnet build ${config:var.buildProperties} /p:Configuration=${config:var.configuration} ${workspaceFolder}/test/Eto.Test.Mac/Eto.Test.XamMac2.csproj",
+			"label": "build-macos",
+			"command": "dotnet build ${config:var.buildProperties} /p:Configuration=${config:var.configuration} ${workspaceFolder}/test/Eto.Test.Mac/Eto.Test.macOS.csproj",
 			"type": "shell",
 			"group": "build",
 			"problemMatcher": "$msCompile",
@@ -142,13 +171,44 @@
 			}
 		},
 		{
+			"label": "build-unittests",
+			"command": "dotnet build ${config:var.buildProperties} /p:Configuration=${config:var.configuration} ${workspaceFolder}/test/Eto.Test.UnitTests/Eto.Test.UnitTests.csproj",
+			"type": "shell",
+			"group": "build",
+			"problemMatcher": "$msCompile",
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "run-unittests",
+			"command": "dotnet test --project ${workspaceFolder}/test/Eto.Test.UnitTests/Eto.Test.UnitTests.csproj /p:Configuration=${config:var.configuration} --filter \"TestCategory!=ManualTest\"",
+			"type": "shell",
+			"group": "build",
+			"problemMatcher": "$msCompile",
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "build-sdk-test",
+			"command": "dotnet build ${config:var.buildProperties} /p:Configuration=${config:var.configuration} ${workspaceFolder}/samples/SdkTest/SdkTest.csproj",
+			"type": "shell",
+			"group": "build",
+			"dependsOn": "build-packages",
+			"problemMatcher": "$msCompile",
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
 			"label": "restore",
-			"command": "dotnet restore /v:Minimal ${workspaceFolder}/src/Eto.sln",
+			"command": "dotnet restore /v:Minimal ${workspaceFolder}/src/Eto.slnx",
 			"type": "shell",
 			"problemMatcher": "$msCompile"
 		},
-        {
-            "label": "Git clean + submodule init (DANGEROUS!)",
+		{
+			"label": "Git clean + submodule init (DANGEROUS!)",
 			"type": "shell",
 			"command": "[ '${input:confirm}' = 'Yes' ] && git clean -dxff && git submodule foreach git clean -dxff && git submodule update --init --recursive",
 			"windows": {
@@ -160,12 +220,48 @@
 			}
 		},
 		{
+			"label": "test non-manual",
+			"type": "shell",
+			"command": "dotnet test --project ${workspaceFolder}/test/Eto.Test.UnitTests/Eto.Test.UnitTests.csproj --filter \"TestCategory!=ManualTest\"",
+			"problemMatcher": "$msCompile",
+			"presentation": {
+				"clear": true,
+				"focus": true
+			}
+		},
+		{
 			"label": "Set Eto version",
 			"type": "shell",
 			"command": "dotnet msbuild ${workspaceFolder}/build/Build.proj /t:UpdateVersion /p:SetVersion=${input:version}",
 			"problemMatcher": "$msCompile",
 			"presentation": {
 				"clear": true
+			}
+		},
+		{
+			"label": "install-macos-workload",
+			"type": "shell",
+			"command": "sudo dotnet workload install macos --from-rollback-file dotnet-workloads.json",
+			"problemMatcher": "$msCompile",
+			"presentation": {
+				"clear": true,
+				"focus": true
+			}
+		},
+		{
+			"label": "act-pull-request",
+			"type": "shell",
+			"osx": {
+				"command": "sudo act pull_request -P macos-14=-self-hosted"
+			},
+			"windows": {
+				// winget install gerardog.gsudo
+				"command": "gsudo act pull_request -P windows-2022=-self-hosted",
+			},
+			"problemMatcher": "$msCompile",
+			"presentation": {
+				"clear": true,
+				"focus": true
 			}
 		}
 	],
@@ -177,6 +273,15 @@
 			"options": [
 				"No",
 				"Yes"
+			]
+		},
+		{
+			"type": "pickString",
+			"id": "configuration",
+			"description": "Build Configuration",
+			"options": [
+				"Debug",
+				"Release"
 			]
 		},
 		{

@@ -1,38 +1,3 @@
-using System;
-using Eto.Drawing;
-using Eto.Forms;
-using System.Linq;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 namespace Eto.Mac.Forms.Controls
 {
 	public class ExpanderHandler : MacPanel<NSView, Expander, Expander.ICallback>, Expander.IHandler
@@ -46,6 +11,14 @@ namespace Eto.Mac.Forms.Controls
 		public class NSExpanderView : MacEventView
 		{
 			new ExpanderHandler Handler => base.Handler as ExpanderHandler;
+
+			public NSExpanderView()
+			{
+			}
+
+			public NSExpanderView(IntPtr handle) : base(handle)
+			{
+			}
 
 			public override void Layout()
 			{
@@ -69,8 +42,8 @@ namespace Eto.Mac.Forms.Controls
 
 		public double AnimationDuration
 		{
-			get { return Widget.Properties.Get<double>(AnimationDuration_Key, 0.2); }
-			set { Widget.Properties.Set(AnimationDuration_Key, value); }
+			get { return Widget.Properties.Get<double>(AnimationDuration_Key, 0.14); }
+			set { Widget.Properties.Set(AnimationDuration_Key, value, 0.14); }
 		}
 
 		protected override NSView CreateControl() => new NSExpanderView();
@@ -128,41 +101,52 @@ namespace Eto.Mac.Forms.Controls
 			}
 			if (EnableAnimation)
 			{
-				var frame = content.Frame;
+				var startFrame = content.Frame;
+				var endFrame = startFrame;
 				var controlFrame = Control.Frame;
 
+				suspendContentSizing++;
 				if (Expanded)
 				{
-					frame.Y = 0;
-					suspendContentSizing++;
+					endFrame.Y = 0;
 					var newSize = GetPreferredSize(SizeF.PositiveInfinity);
 
 					controlFrame.Height = newSize.Height;
 					Control.Frame = controlFrame;
+
+					endFrame.Height = newSize.Height - header.Frame.Height;
+					startFrame = new CGRect(0, endFrame.Height, endFrame.Width, 0);
+
 					InvalidateMeasure();
 					Control.Window?.LayoutIfNeeded();
-					content.Frame = new CGRect(0, controlFrame.Height - header.Frame.Height, controlFrame.Width, 0);
-					suspendContentSizing--;
-					frame.Height = newSize.Height - header.Frame.Height;
 					content.Hidden = false;
 				}
 				else
 				{
-					frame.Y = Control.Frame.Height - header.Frame.Height;
-					frame.Height = 0;
+					endFrame.Y = Control.Frame.Height - header.Frame.Height;
+					endFrame.Height = 0;
 				}
 
 				NSAnimationContext.RunAnimation(ctx =>
 				{
-					ctx.Duration = AnimationDuration;
-					((NSView)content.Animator).Frame = frame;
-				}, () =>
-				{
-					content.Hidden = !Expanded;
-					Callback.OnExpandedChanged(Widget, EventArgs.Empty);
-					InvalidateMeasure();
-				}
+					ctx.Duration = 0;
+					((NSView)content.Animator).Frame = startFrame;
+					content.SetClipsToBounds(true);
+				}, () => NSAnimationContext.RunAnimation(ctx =>
+					{
+						ctx.Duration = AnimationDuration;
+						((NSView)content.Animator).Frame = endFrame;
+					}, () =>
+					{
+						suspendContentSizing--;
+						content.Hidden = !Expanded;
+						Callback.OnExpandedChanged(Widget, EventArgs.Empty);
+						content.SetClipsToBounds(false);
+						InvalidateMeasure();
+					}
+					)
 				);
+
 			}
 			else
 			{
@@ -249,14 +233,15 @@ namespace Eto.Mac.Forms.Controls
 			}
 		}
 
-		public override NSView ContainerControl
+		public override NSView ContainerControl => Control;
+
+		public override NSView ContentControl => content;
+
+		public override void InvalidateMeasure()
 		{
-			get { return Control; }
+			base.InvalidateMeasure();
+			Control.NeedsLayout = true;
 		}
 
-		public override NSView ContentControl
-		{
-			get { return content; }
-		}
 	}
 }

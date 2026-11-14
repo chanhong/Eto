@@ -1,12 +1,11 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.GtkSharp.Drawing;
 
 namespace Eto.GtkSharp.Forms.Controls
 {
 	public class LabelHandler : GtkControl<LabelHandler.EtoLabel, Label, Label.ICallback>, Label.IHandler
 	{
+		string _text;
+		bool _alwaysShowMnemonic;
 		readonly Gtk.EventBox eventBox;
 		TextAlignment horizontalAlign = TextAlignment.Left;
 		VerticalAlignment verticalAlign = VerticalAlignment.Top;
@@ -122,55 +121,63 @@ namespace Eto.GtkSharp.Forms.Controls
 			eventBox.ResizeMode = Gtk.ResizeMode.Immediate;
 #endif
 			Control = new EtoLabel();
+			Control.UseUnderline = true;
 			Control.Xalign = 0;
 			Control.Yalign = 0;
 			eventBox.Child = Control;
 			Wrap = WrapMode.Word;
 		}
 
+		WrapMode wrap = WrapMode.Word;
+		TextTrimming trimming;
+
 		public WrapMode Wrap
 		{
-			get
-			{
-				if (!Control.LineWrap)
-					return WrapMode.None;
-				if (Control.LineWrapMode == Pango.WrapMode.Char)
-					return WrapMode.Character;
-				return WrapMode.Word;
-			}
+			get => wrap;
 			set
 			{
-				SetWrap(value);
+				wrap = value;
+				SetWrap();
 			}
 		}
 
-		void SetWrap(WrapMode mode)
+		public TextTrimming Trimming
+		{
+			get => trimming;
+			set
+			{
+				trimming = value;
+				SetWrap();
+			}
+		}
+
+		void SetWrap()
 		{
 			Control.ResetWidth();
-			switch (mode)
+			switch (wrap)
 			{
 				case WrapMode.None:
 					Control.Wrap = false;
 					Control.LineWrap = false;
-					Control.SingleLineMode = true;
 					break;
 				case WrapMode.Word:
 					Control.Wrap = true;
 					Control.Layout.Wrap = Pango.WrapMode.WordChar;
 					Control.LineWrapMode = Pango.WrapMode.WordChar;
 					Control.LineWrap = true;
-					Control.SingleLineMode = false;
 					break;
 				case WrapMode.Character:
 					Control.Wrap = true;
 					Control.Layout.Wrap = Pango.WrapMode.Char;
 					Control.LineWrapMode = Pango.WrapMode.Char;
 					Control.LineWrap = true;
-					Control.SingleLineMode = false;
 					break;
 				default:
 					throw new NotSupportedException();
 			}
+			// Pango cannot wrap and ellipsize the same layout - setting both makes it ellipsize to a single
+			// line instead of wrapping.  Wrapping wins here, see Eto.Forms.TextTrimming.
+			Control.Ellipsize = wrap == WrapMode.None ? trimming.ToPango() : Pango.EllipsizeMode.None;
 			Control.QueueResize();
 		}
 
@@ -194,11 +201,23 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		public override string Text
 		{
-			get { return Control.Text.ToEtoMnemonic(); }
+			get => _text;
 			set
 			{
 				Control.ResetWidth();
-				Control.TextWithMnemonic = value.ToPlatformMnemonic();
+				_text = value;
+				if (Control.UseUnderline)
+				{
+					Control.TextWithMnemonic = _text.ToPlatformMnemonic();
+					// Keep Gtk's mnemonic behavior via TextWithMnemonic, and
+					// use the label pattern only to make the underline visible.
+					Control.Pattern = _alwaysShowMnemonic ? GtkMnemonicHelper.ToPatternWithMnemonicUnderline(_text) : null;
+				}
+				else
+				{
+					Control.Pattern = null;
+					Control.Text = _text;
+				}
 				InvalidateMeasure();
 			}
 		}
@@ -242,6 +261,32 @@ namespace Eto.GtkSharp.Forms.Controls
 				Control.ResetWidth();
 				base.Font = value;
 				Control.Attributes = value != null ? ((FontHandler)value.Handler).Attributes : null;
+			}
+		}
+
+		public bool UseMnemonic
+		{
+			get => Control.UseUnderline;
+			set
+			{
+				if (value == Control.UseUnderline)
+					return; // no change
+				var text = Text;
+				Control.UseUnderline = value;
+				Text = text;
+			}
+		}
+
+		public bool AlwaysShowMnemonic
+		{
+			get => _alwaysShowMnemonic;
+			set
+			{
+				if (_alwaysShowMnemonic == value)
+					return;
+				_alwaysShowMnemonic = value;
+				if (_text != null)
+					Text = _text;
 			}
 		}
 	}

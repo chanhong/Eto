@@ -1,8 +1,3 @@
-using System;
-using System.Linq;
-using swf = System.Windows.Forms;
-using Eto.Forms;
-using Eto.Drawing;
 
 namespace Eto.WinForms.Forms.Menu
 {
@@ -12,6 +7,13 @@ namespace Eto.WinForms.Forms.Menu
 		public ContextMenuHandler()
 		{
 			Control = new swf.ContextMenuStrip();
+			Control.Opening += HandleOpening;
+			Control.KeyDown += HandleKeyDown;
+		}
+
+		public ContextMenuHandler(swf.ContextMenuStrip contextMenuStrip)
+		{
+			Control = contextMenuStrip;
 			Control.Opening += HandleOpening;
 			Control.KeyDown += HandleKeyDown;
 		}
@@ -79,6 +81,9 @@ namespace Eto.WinForms.Forms.Menu
 			Control.Items.Clear();
 		}
 
+		// WinForms does not add any system items to a context menu, so this is only stored to round-trip the value.
+		public ContextMenuSystemItems IncludeSystemItems { get; set; } = ContextMenuSystemItems.All;
+
 		public void Show(Control relativeTo, PointF? location)
 		{
 			if (relativeTo != null)
@@ -91,6 +96,22 @@ namespace Eto.WinForms.Forms.Menu
 			{
 				var position = location?.ToSDPoint() ?? swf.Control.MousePosition;
 				Control.Show(position);
+			}
+		}
+
+		internal static IEnumerable<MenuItem> GetMenuItems(swf.ToolStripItemCollection items)
+		{
+			foreach (swf.ToolStripItem item in items)
+			{
+				if (item is swf.ToolStripSeparator sep)
+					yield return new SeparatorMenuItem(new SeparatorMenuItemHandler(sep));
+				else if (item is swf.ToolStripMenuItem menuItem)
+				{
+					if (menuItem.HasDropDownItems)
+						yield return new SubMenuItem(new SubMenuItemHandler(menuItem), GetMenuItems(menuItem.DropDown.Items));
+					else
+						yield return new ButtonMenuItem(new ButtonMenuItemHandler(menuItem));
+				}
 			}
 		}
 	}

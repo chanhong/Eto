@@ -1,6 +1,3 @@
-using System;
-using Eto.Forms;
-
 namespace Eto.GtkSharp.Forms.Controls
 {
 	public class CalendarHandler : GtkControl<Gtk.Calendar, Calendar, Calendar.ICallback>, Calendar.IHandler
@@ -60,7 +57,7 @@ namespace Eto.GtkSharp.Forms.Controls
 				suppressRangeChanged--;
 
 				if (box == null)
-					box = new Gtk.HBox();
+					box = new Gtk.Box(Gtk.Orientation.Horizontal, 0);
 				else
 					box.Remove(endCalendar);
 				box.PackStart(Control, true, true, 0);

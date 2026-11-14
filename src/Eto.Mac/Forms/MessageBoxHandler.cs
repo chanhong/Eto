@@ -1,25 +1,3 @@
-using System;
-using Eto.Forms;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#endif
-
 namespace Eto.Mac.Forms
 {
 	public class MessageBoxHandler : MessageBox.IHandler
@@ -33,9 +11,12 @@ namespace Eto.Mac.Forms
 		public MessageBoxButtons Buttons { get; set; }
 
 		public MessageBoxDefaultButton DefaultButton { get; set; }
+		
+		public Image Image { get; set; }
 
 		public DialogResult ShowDialog(Control parent)
 		{
+			MacView.CancelMouseTracking();
 			var alert = new NSAlert();
 
 			AddButtons(alert);
@@ -43,6 +24,7 @@ namespace Eto.Mac.Forms
 			alert.AlertStyle = Convert(Type);
 			alert.MessageText = Caption ?? string.Empty;
 			alert.InformativeText = Text ?? string.Empty;
+			alert.Icon = Image?.ToNS() ?? NSApplication.SharedApplication.ApplicationIconImage;
 			var ret = MacModal.Run(alert, parent);
 			switch (Buttons)
 			{
@@ -68,10 +50,12 @@ namespace Eto.Mac.Forms
 				var isCmdDown = mods.HasFlag(NSEventModifierMask.CommandKeyMask);
 				if ((mods == 0 && theEvent.KeyCode == 53) || (isCmdDown && typed == "."))
 				{
-					if (Window.IsSheet)
-						NSApplication.SharedApplication.EndSheet(Window, Code);
+					if (Window.IsSheet && Window.SheetParent != null)
+						Window.SheetParent.EndSheet(Window, (NSModalResponse)Code);
 					else
 						NSApplication.SharedApplication.StopModalWithCode(Code);
+						
+					return true;
 				}
 				return base.PerformKeyEquivalent(theEvent);
 			}

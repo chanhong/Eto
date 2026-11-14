@@ -1,22 +1,28 @@
-using System;
-using sw = System.Windows;
-using swc = System.Windows.Controls;
-using Eto.Forms;
-
 namespace Eto.Wpf.Forms.Controls
 {
+	public class EtoCheckBox : swc.CheckBox, IEtoWpfControl
+	{
+		public IWpfFrameworkElement Handler { get; set; }
+
+		protected override sw.Size MeasureOverride(sw.Size constraint)
+		{
+			return Handler?.MeasureOverride(constraint, base.MeasureOverride) ?? base.MeasureOverride(constraint);
+		}
+	}
+	
 	public class CheckBoxHandler : WpfControl<swc.CheckBox, CheckBox, CheckBox.ICallback>, CheckBox.IHandler
 	{
-		readonly swc.Border border;
+		readonly swc.Border _border;
+		EtoAccessLabel _labelPart;
 
-		public override sw.FrameworkElement ContainerControl
-		{
-			get { return border; }
-		}
+		EtoAccessLabel LabelPart => _labelPart ??= new EtoAccessLabel();
 
-		public CheckBoxHandler ()
+		public override sw.FrameworkElement ContainerControl => _border;
+
+		public CheckBoxHandler()
 		{
-			Control = new swc.CheckBox {
+			Control = new EtoCheckBox {
+				Handler = this,
 				IsThreeState = false,
 				VerticalAlignment = sw.VerticalAlignment.Center,
 				VerticalContentAlignment = sw.VerticalAlignment.Center
@@ -25,13 +31,13 @@ namespace Eto.Wpf.Forms.Controls
 			Control.Unchecked += (sender, e) => Callback.OnCheckedChanged(Widget, EventArgs.Empty);
 			Control.Indeterminate += (sender, e) => Callback.OnCheckedChanged(Widget, EventArgs.Empty);
 
-			border = new EtoBorder { Handler = this, Child = Control };
+			_border = new EtoBorder { Handler = this, Child = Control };
 		}
 
 		public override Eto.Drawing.Color BackgroundColor
 		{
-			get { return border.Background.ToEtoColor(); }
-			set { border.Background = value.ToWpfBrush(Control.Background); }
+			get { return _border.Background.ToEtoColor(); }
+			set { _border.Background = value.ToWpfBrush(Control.Background); }
 		}
 
 		public override bool UseMousePreview { get { return true; } }
@@ -46,14 +52,38 @@ namespace Eto.Wpf.Forms.Controls
 
 		public string Text
 		{
-			get { return (Control.Content as string).ToEtoMnemonic(); }
-			set { Control.Content = value.ToPlatformMnemonic(); }
+			get => _labelPart?.Text;
+			set
+			{
+				if (value == Text || (string.IsNullOrEmpty(value) && _labelPart == null))
+					return;
+				LabelPart.Text = value;
+				Control.Content = LabelPart;
+			}
 		}
 
 		public bool ThreeState
 		{
 			get { return Control.IsThreeState; }
 			set { Control.IsThreeState = value; }
+		}
+
+		public bool UseMnemonic
+		{
+			get => _labelPart?.UseMnemonic ?? true;
+			set => LabelPart.UseMnemonic = value;
+		}
+
+		public bool AlwaysShowMnemonic
+		{
+			get => _labelPart?.AlwaysShowMnemonic ?? false;
+			set => LabelPart.AlwaysShowMnemonic = value;
+		}
+
+		public bool EnableMnemonic
+		{
+			get => _labelPart?.EnableMnemonic ?? true;
+			set => LabelPart.EnableMnemonic = value;
 		}
 	}
 }

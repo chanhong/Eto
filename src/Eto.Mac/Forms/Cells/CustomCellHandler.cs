@@ -1,39 +1,7 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-using System.Collections.Generic;
 using Eto.Mac.Forms.Controls;
 using Eto.Shared;
 
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
+
 
 namespace Eto.Mac.Forms.Cells
 {
@@ -53,7 +21,7 @@ namespace Eto.Mac.Forms.Cells
 		public override nfloat GetPreferredWidth(object value, CGSize cellSize, int row, object dataItem)
 		{
 			var column = -1;// TODO: lookup!
-			var args = new MutableCellEventArgs(ColumnHandler?.DataViewHandler as Grid, Widget, row, column, dataItem, CellStates.None, null);
+			var args = new MutableCellEventArgs(ColumnHandler?.DataViewHandler?.Widget, Widget, row, column, dataItem, CellStates.None, null);
 			var identifier = Callback.OnGetIdentifier(Widget, args) ?? string.Empty;
 			Control widthCell;
 			if (!widthCells.TryGetValue(identifier, out widthCell))
@@ -70,6 +38,8 @@ namespace Eto.Mac.Forms.Cells
 
 			var result = widthCell.GetPreferredSize(SizeF.PositiveInfinity).Width;
 
+			// The cached cell's bindings keep these args, so don't let them keep the item alive.
+			args.SetItem(null);
 			widthCell.DataContext = null;
 			return result;
 		}
@@ -77,10 +47,16 @@ namespace Eto.Mac.Forms.Cells
 
 		public class EtoCustomCellView : NSTableCellView
 		{
-			public CustomCellHandler Handler { get; set;}
+			WeakReference _handler;
+			public CustomCellHandler Handler
+			{
+				get => _handler?.Target as CustomCellHandler;
+				set => _handler = new WeakReference(value);
+			}
+
 			public MutableCellEventArgs Args { get; set; }
 
-			public Control EtoControl { get; set; }
+			public Control EtoControl => Args.Control;
 
 			public bool DrawsBackground { get; set; }
 
@@ -91,13 +67,10 @@ namespace Eto.Mac.Forms.Cells
 				if (DrawsBackground && BackgroundColor != null && BackgroundColor.AlphaComponent > 0)
 				{
 					BackgroundColor.Set();
-					NSGraphics.RectFill(dirtyRect);
+					NSGraphics.RectFill(Bounds);
 				}
 				base.DrawRect(dirtyRect);
 			}
-
-			static Color AlternateSelectedControlText = NSColor.AlternateSelectedControlText.ToEto();
-			static Color ControlText = NSColor.ControlText.ToEto();
 
 			public override NSBackgroundStyle BackgroundStyle
 			{
@@ -106,9 +79,9 @@ namespace Eto.Mac.Forms.Cells
 				{
 					base.BackgroundStyle = value;
 					if (value == NSBackgroundStyle.Dark)
-						Args.SetTextColor(AlternateSelectedControlText);
+						Args.SetTextColor(SystemColors.HighlightText);
 					else
-						Args.SetTextColor(ControlText);
+						Args.SetTextColor(SystemColors.ControlText);
 				}
 			}
 
@@ -125,13 +98,16 @@ namespace Eto.Mac.Forms.Cells
 				if (losingFocus)
 					return;
 
-				losingFocus = true;
 				var h = Handler;
+				if (h == null)
+					return;
+
+				losingFocus = true;
 				var ee = MacConversions.CreateCellEventArgs(h.ColumnHandler.Widget, null, Args.Row, Args.Column, Args.Item);
-				if (!h.ColumnHandler.DataViewHandler.IsCancellingEdit)
+				if (h.ColumnHandler.DataViewHandler?.IsCancellingEdit == false)
 				{
 					h.Callback.OnCommitEdit(h.Widget, Args);
-					h.ColumnHandler.DataViewHandler.OnCellEdited(ee);
+					h.ColumnHandler.DataViewHandler?.OnCellEdited(ee);
 				}
 				else
 				{
@@ -143,34 +119,38 @@ namespace Eto.Mac.Forms.Cells
 			private void ControlGotFocus(object sender, EventArgs e)
 			{
 				var h = Handler;
+				if (h == null)
+					return;
 				h.Callback.OnBeginEdit(h.Widget, Args);
 				var ee = MacConversions.CreateCellEventArgs(h.ColumnHandler.Widget, null, Args.Row, Args.Column, Args.Item);
-				h.ColumnHandler.DataViewHandler.OnCellEditing(ee);
+				h.ColumnHandler.DataViewHandler?.OnCellEditing(ee);
 			}
 
 			public override void Layout()
 			{
 				base.Layout();
-				var sv = this.Subviews;
+				var sv = Subviews;
 				if (sv.Length > 0)
 				{
 					var view = sv[0];
-					view.Frame = this.Bounds;
+					view.Frame = view.GetFrameForAlignmentRect(Bounds);
 				}
 			}
 
 		}
 
-		public override Color GetBackgroundColor(NSView view)
-		{
-			return ((EtoCustomCellView)view).BackgroundColor.ToEto();
-		}
+		public override Color GetBackgroundColor(NSView view) => ((EtoCustomCellView)view).BackgroundColor.ToEto();
 
 		public override void SetBackgroundColor(NSView view, Color color)
 		{
 			var field = ((EtoCustomCellView)view);
 			field.BackgroundColor = color.ToNSUI();
 			field.DrawsBackground = color.A > 0;
+		}
+
+		private void SetDefaults(EtoCustomCellView view)
+		{
+			view.DrawsBackground = false;
 		}
 
 		public override NSView GetViewForItem(NSTableView tableView, NSTableColumn tableColumn, int row, NSObject obj, Func<NSObject, int, object> getItem)
@@ -182,7 +162,7 @@ namespace Eto.Mac.Forms.Cells
 			if (tableColumn.Editable)
 				state |= CellStates.Editing;
 			var column = -1; // TODO: get index or lookup when needed.
-			var args = new MutableCellEventArgs(ColumnHandler.DataViewHandler as Grid, Widget, row, column, item, state, null);
+			var args = new MutableCellEventArgs(ColumnHandler.DataViewHandler?.Widget, Widget, row, column, item, state, null);
 			var identifier = tableColumn.Identifier;
 			var id = Callback.OnGetIdentifier(Widget, args);
 			if (!string.IsNullOrEmpty(id))
@@ -198,7 +178,6 @@ namespace Eto.Mac.Forms.Cells
 				{ 
 					Handler = this,
 					Args = args,
-					EtoControl = control,
 					Identifier = identifier,
 					AutoresizingMask = NSViewResizingMask.HeightSizable | NSViewResizingMask.WidthSizable
 				};
@@ -216,10 +195,21 @@ namespace Eto.Mac.Forms.Cells
 				view.Args.SetItem(args.Item);
 			}
 
-			var formatArgs = new MacCellFormatArgs(ColumnHandler.Widget, item, row, view);
+			SetDefaults(view);
+			var formatArgs = new MacGridCellFormatEventArgs(ColumnHandler.Widget, item, row, view);
 			ColumnHandler.DataViewHandler.OnCellFormatting(formatArgs);
 			Callback.OnConfigureCell(Widget, view.Args, view.EtoControl);
 			return view;
+		}
+
+		public override void ViewRemoved(NSView view)
+		{
+			base.ViewRemoved(view);
+			if (view is EtoCustomCellView etoView)
+			{
+				etoView.Args.SetItem(null);
+				Callback.OnConfigureCell(Widget, etoView.Args, etoView.EtoControl);
+			}
 		}
 	}
 }

@@ -1,50 +1,32 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-using swc = System.Windows.Controls;
-using swm = System.Windows.Media;
-using swi = System.Windows.Input;
-using sw = System.Windows;
-
 namespace Eto.Wpf.Forms.Controls
 {
-	public class EtoLabel : swc.Label
+	
+	public class EtoLabel : EtoAccessLabel
 	{
-		public LabelHandler Handler { get; set; }
-		protected override void OnAccessKey(swi.AccessKeyEventArgs e)
-		{
-			// move focus to the next control after the label
-			var tRequest = new swi.TraversalRequest(swi.FocusNavigationDirection.Next);
-			MoveFocus(tRequest);
-		}
+		public IWpfFrameworkElement Handler { get; set; }
 
 		protected override sw.Size MeasureOverride(sw.Size constraint)
 		{
-			var size = Handler.MeasureOverride(constraint, base.MeasureOverride);
-			size.Width += 1;
-			return size;
+			return Handler?.MeasureOverride(constraint, base.MeasureOverride) ?? base.MeasureOverride(constraint);
 		}
 	}
 
-	public class LabelHandler : WpfControl<swc.Label, Label, Label.ICallback>, Label.IHandler
+	public class LabelHandler : WpfControl<EtoAccessLabel, Label, Label.ICallback>, Label.IHandler
 	{
-		readonly swc.AccessText accessText;
-		double? previousWidth;
+		double? previousDesiredHeight;
 		string text;
 
 		protected override void SetDecorations(sw.TextDecorationCollection decorations)
 		{
-			accessText.TextDecorations = decorations;
+			Control.TextDecorations = decorations;
 		}
 
-		public LabelHandler ()
+		public LabelHandler()
 		{
-			accessText = new swc.AccessText();
+			// accessText = new swc.AccessText();
 			Control = new EtoLabel
 			{
-				Handler = this,
-				Padding = new sw.Thickness(0),
-				Content = accessText
+				Handler = this
 			};
 			Control.Target = Control;
 			Control.SizeChanged += Control_SizeChanged;
@@ -55,26 +37,33 @@ namespace Eto.Wpf.Forms.Controls
 			// not loaded? don't worry about it.
 			if (!Control.IsLoaded)
 				return;
-			var newWidth = Control.ActualWidth;
-			if (previousWidth == null)
+
+			// if we have a set height or no wrapping, let's skip this
+			if (Wrap == WrapMode.None || !double.IsNaN(UserPreferredSize.Height))
+				return;
+
+			var newDesiredHeight = Control.DesiredSize.Height;
+			if (previousDesiredHeight == null)
 			{
 				// don't update preferred sizes when called the first time.
 				// when there's many labels this causes a major slowdown
 				// the initial size should already have been taken care of by 
 				// the initial layout pass.
-				previousWidth = newWidth;
+				previousDesiredHeight = newDesiredHeight;
 				return;
 			}
 
-			// ignore tiny changes as in some scales (e.g. 150%, 175%) it can cause an endless update cycle
-			if (Math.Abs(previousWidth.Value - newWidth) < 1)
+			// Ignore any change that is less than half the line height of the current font
+			// as WPF will return inconsistent results for its DesiredSize.Height in
+			// odd scales to position on pixel boundaries (e.g. 150%, 175%), 
+			// causing an endless update cycle in some cases.
+			if (Math.Abs(previousDesiredHeight.Value - newDesiredHeight) < Control.FontSize / 2)
 				return;
-			// update parents when the actual width has changed
-			// otherwise it won't shrink vertically when it gets wider
-			// when wrapped
-			previousWidth = newWidth;
-			if (Wrap != WrapMode.None)
-                UpdatePreferredSize();
+
+			// update parents when the actual desired height has changed
+			// otherwise parent containers won't shrink vertically when it gets wider when wrapped
+			previousDesiredHeight = newDesiredHeight;
+			UpdatePreferredSize();
 		}
 
 		protected override void Initialize()
@@ -101,11 +90,10 @@ namespace Eto.Wpf.Forms.Controls
 
 		public TextAlignment TextAlignment
 		{
-			get { return Control.HorizontalContentAlignment.ToEto(); }
+			get { return Control.TextAlignment.ToEto(); }
 			set
 			{
-				Control.HorizontalContentAlignment = value.ToWpf();
-				accessText.TextAlignment = value.ToWpfTextAlignment();
+				Control.TextAlignment = value.ToWpfTextAlignment();
 			}
 		}
 
@@ -117,53 +105,42 @@ namespace Eto.Wpf.Forms.Controls
 
 		public WrapMode Wrap
 		{
-			get
-			{
-				switch (accessText.TextWrapping) {
-					case sw.TextWrapping.NoWrap:
-						return WrapMode.None;
-					case sw.TextWrapping.Wrap:
-						return WrapMode.Character;
-					case sw.TextWrapping.WrapWithOverflow:
-						return WrapMode.Word;
-					default:
-						throw new NotSupportedException ();
-				}
-			}
+			get => Control.TextWrapping.ToEto();
 			set
 			{
 				if (value != Wrap)
 				{
-					switch (value)
-					{
-						case WrapMode.Word:
-							accessText.TextWrapping = sw.TextWrapping.WrapWithOverflow;
-							break;
-						case WrapMode.Character:
-							accessText.TextWrapping = sw.TextWrapping.Wrap;
-							break;
-						case WrapMode.None:
-							accessText.TextWrapping = sw.TextWrapping.NoWrap;
-							break;
-						default:
-							throw new NotSupportedException();
-					}
+					Control.TextWrapping = value.ToWpf();
 					SetText();
-                    UpdatePreferredSize();
+					UpdatePreferredSize();
 				}
 			}
 		}
 
-        public override void UpdatePreferredSize()
-        {
-            ParentMinimumSize = WpfConversions.ZeroSize;
-            base.UpdatePreferredSize();
-        }
+		public TextTrimming Trimming
+		{
+			get => Control.TextTrimming.ToEto();
+			set
+			{
+				if (value != Trimming)
+				{
+					Control.TextTrimming = value.ToWpf();
+					UpdatePreferredSize();
+				}
+			}
+		}
+
+
+		public override void UpdatePreferredSize()
+		{
+			ParentMinimumSize = WpfConversions.ZeroSize;
+			base.UpdatePreferredSize();
+		}
 
 		public override Color TextColor
 		{
-			get { return accessText.Foreground.ToEtoColor(); }
-			set { accessText.Foreground = value.ToWpfBrush(accessText.Foreground); }
+			get { return Control.Foreground.ToEtoColor(); }
+			set { Control.Foreground = value.ToWpfBrush(Control.Foreground); }
 		}
 
 		public string Text
@@ -176,6 +153,24 @@ namespace Eto.Wpf.Forms.Controls
 			}
 		}
 
+		public bool UseMnemonic
+		{
+			get => Control.UseMnemonic;
+			set => Control.UseMnemonic = value;
+		}
+
+		public bool AlwaysShowMnemonic
+		{
+			get => Control.AlwaysShowMnemonic;
+			set => Control.AlwaysShowMnemonic = value;
+		}
+
+		public bool EnableMnemonic
+		{
+			get => Control.EnableMnemonic;
+			set => Control.EnableMnemonic = value;
+		}
+
 		void SetText()
 		{
 			var newText = text;
@@ -186,7 +181,7 @@ namespace Eto.Wpf.Forms.Controls
 				newText = newText.Replace(' ', (char)0xa0); // no break space
 			}
 
-			accessText.Text = newText.ToPlatformMnemonic();
+			Control.Text = newText;
 		}
 	}
 }

@@ -1,9 +1,5 @@
-using System;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
-using System.Reflection;
-using System.Collections.Generic;
-using System.Linq;
 using Eto.Serialization.Json.Converters;
 
 namespace Eto.Serialization.Json
@@ -20,9 +16,38 @@ namespace Eto.Serialization.Json
 			return base.CreateMemberValueProvider(member);
 		}
 
+		static readonly BindingConverter bindingConverter = new BindingConverter();
+		static readonly DesignDataContextConverter designDataContextConverter = new DesignDataContextConverter();
+
 		protected override IList<JsonProperty> CreateProperties(Type type, MemberSerialization memberSerialization)
 		{
 			var list = base.CreateProperties(type, memberSerialization);
+
+			if (typeof(IBindable).IsAssignableFrom(type))
+			{
+				// allow "{Binding Path}" for any settable property
+				foreach (var prop in list)
+				{
+					if (prop.Writable && !prop.Ignored && prop.Converter == null && prop.ValueProvider != null)
+					{
+						prop.Converter = bindingConverter;
+						prop.ValueProvider = new BindingValueProvider(prop.ValueProvider, prop.UnderlyingName, prop.PropertyType);
+					}
+				}
+			}
+
+			if (typeof(BindableWidget).IsAssignableFrom(type))
+			{
+				list.Add(new JsonProperty
+				{
+					PropertyName = "d:DataContext",
+					DeclaringType = type,
+					PropertyType = typeof(object),
+					Converter = designDataContextConverter,
+					ValueProvider = new DesignDataContextValueProvider(),
+					Writable = true
+				});
+			}
 
 			// add events as json properties
 			foreach (var eventInfo in type.GetRuntimeEvents().Where(r => 
@@ -31,11 +56,7 @@ namespace Eto.Serialization.Json
 				return addMethod.IsPublic && !addMethod.IsStatic 
 					&& (
 						(
-							#if PCL
-							r.EventHandlerType.GetTypeInfo().IsGenericType
-							#else
 							r.EventHandlerType.IsGenericType
-							#endif
 							&& r.EventHandlerType.GetGenericTypeDefinition() == typeof(EventHandler<>)
 						)
 						|| r.EventHandlerType == typeof(EventHandler)
@@ -61,20 +82,16 @@ namespace Eto.Serialization.Json
 				{
 					list.Remove(idprop); // replaced with our own.
 
-					// allow for $name or ID.
-					var prop = CreateProperty(propertyInfo, memberSerialization);
-					prop.PropertyName = "$name";
-					prop.PropertyType = typeof(NameConverter.Info);
-					prop.Converter = new NameConverter();
-					prop.ValueProvider = new NameConverter.ValueProvider();
-					list.Add(prop);
-
-					prop = CreateProperty(propertyInfo, memberSerialization);
-					prop.PropertyName = "ID";
-					prop.PropertyType = typeof(NameConverter.Info);
-					prop.Converter = new NameConverter();
-					prop.ValueProvider = new NameConverter.ValueProvider();
-					list.Add(prop);
+					// allow for $name, ID, or Newtonsoft's $id (which it reads itself when it comes first)
+					foreach (var name in new[] { "$name", "ID", "$id" })
+					{
+						var prop = CreateProperty(propertyInfo, memberSerialization);
+						prop.PropertyName = name;
+						prop.PropertyType = typeof(NameConverter.Info);
+						prop.Converter = new NameConverter();
+						prop.ValueProvider = new NameConverter.ValueProvider();
+						list.Add(prop);
+					}
 				}
 			}
 

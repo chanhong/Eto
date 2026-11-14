@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+  	<TargetFramework>net10.0-windows10.0.22621</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Eto.WinUI</RootNamespace>
+    <UseWinUI>true</UseWinUI>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <WindowsPackageType>None</WindowsPackageType>
+    <PackageId>Eto.Platform.WinUI</PackageId>
+    <DefineConstants>$(DefineConstants);WINUI</DefineConstants>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.UI.Xaml" Alias="mux" />
+    <Using Include="Microsoft.UI.Xaml.Media" Alias="muxm" />
+    <Using Include="Microsoft.UI.Dispatching" Alias="mud" />
+    <Using Include="Microsoft.UI.Xaml.Controls" Alias="muc" />
+    <Using Include="Windows.Foundation" Alias="sw" />
+    <Using Include="Windows.Foundation" Alias="wf" />
+    <Using Include="Windows.UI" Alias="wu" />
+    <Using Include="Microsoft.UI" Alias="mu" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.ColorPicker" Version="8.2.250402" />
+    <PackageReference Include="CommunityToolkit.WinUI.UI.Controls.DataGrid" Version="7.1.2" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.250410001-experimental1" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.3916" />
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.Sizers" Version="8.2.250402" />
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.Primitives" Version="8.2.250402" />
+    <PackageReference Include="CommunityToolkit.WinUI.Helpers" Version="8.2.250402" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Eto\Eto.csproj" />
+  </ItemGroup>
+
+</Project>

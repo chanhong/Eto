@@ -1,6 +1,3 @@
-using System;
-using Eto.Forms;
-
 namespace Eto.GtkSharp.Forms.Controls
 {
 	public class PanelHandler : GtkPanel<Gtk.EventBox, Panel, Panel.ICallback>, Panel.IHandler
@@ -21,7 +18,7 @@ namespace Eto.GtkSharp.Forms.Controls
 		public PanelHandler()
 		{
 			Control = new Gtk.EventBox();
-			box = new Gtk.VBox();
+			box = new Gtk.Box(Gtk.Orientation.Vertical, 0);
 			Control.Add(box);
 		}
 

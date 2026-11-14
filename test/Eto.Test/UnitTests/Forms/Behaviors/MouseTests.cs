@@ -1,0 +1,421 @@
+using NUnit.Framework;
+
+namespace Eto.Test.UnitTests.Forms.Behaviors
+{
+	[TestFixture]
+	public class MouseTests : TestBase
+	{
+		[Test]
+		public void PositionShouldBeReadableFromBackgroundThread() => Async(async () =>
+		{
+			if (!Mouse.IsSupported)
+				Assert.Ignore("Mouse functions are not supported by this platform.");
+			if (Platform.Instance.IsGtk)
+				Assert.Ignore("GTK requires mouse position to be read on the UI thread.");
+
+			await Task.Run(() => Mouse.Position);
+		});
+
+		[Test]
+		public void ButtonsShouldBeReadableFromBackgroundThread() => Async(async () =>
+		{
+			if (!Mouse.IsSupported)
+				Assert.Ignore("Mouse functions are not supported by this platform.");
+			if (Platform.Instance.IsGtk)
+				Assert.Ignore("GTK requires mouse buttons to be read on the UI thread.");
+
+			await Task.Run(() => Mouse.Buttons);
+		});
+
+		[Test, ManualTest]
+		public void EventsFromParentShouldWorkWhenChildRemoved()
+		{
+			var mouseUpCalled = false;
+			var contentRemoved = false;
+			var mouseDown = false;
+			var mouseDownInChild = false;
+			var mouseMovedEvenAfterRemoved = false;
+			ManualForm("Click and drag the blue square,\nit should dissapear and the MouseUp event should be fired",
+			form =>
+			{
+				var top = new Panel { Size = new Size(200, 200) };
+				top.MouseDown += (sender, e) =>
+				{
+					if (e.Buttons == MouseButtons.Primary)
+					{
+						e.Handled = true;
+						mouseDown = true;
+					}
+				};
+
+				top.MouseMove += (sender, e) =>
+				{
+					if (mouseDown && mouseDownInChild && e.Buttons == MouseButtons.Primary)
+					{
+						top.Content = new Panel();
+						contentRemoved = true;
+					}
+				};
+
+				top.MouseUp += (sender, e) =>
+				{
+					if (contentRemoved)
+					{
+						e.Handled = true;
+						mouseDown = false;
+						mouseUpCalled = true;
+						Application.Instance.AsyncInvoke(form.Close);
+					}
+				};
+
+				var child = new Panel { Size = new Size(100, 100), BackgroundColor = Colors.Blue };
+
+				child.MouseDown += (sender, e) =>
+				{
+					if (e.Buttons == MouseButtons.Primary)
+					{
+						mouseDownInChild = true;
+						// explicitly not setting e.Handled here so it bubbles to the top control
+					}
+				};
+				child.MouseMove += (sender, e) =>
+				{
+					if (contentRemoved && e.Buttons == MouseButtons.Primary)
+					{
+						mouseMovedEvenAfterRemoved = true;
+					}
+				};
+
+				child.MouseUp += (sender, e) =>
+				{
+					if (mouseDownInChild && e.Buttons == MouseButtons.Primary)
+					{
+						mouseDownInChild = false;
+					}
+				};
+
+				top.Content = TableLayout.AutoSized(child, centered: true);
+
+				return top;
+
+			}, allowPass: false);
+
+			Assert.That(mouseUpCalled, Is.True, "#1 - MouseUp was not called on top control");
+			Assert.That(contentRemoved, Is.True, "#2 - Content (blue square) was not removed");
+			Assert.That(mouseDownInChild, Is.True, "#3 - MouseUp should NOT be called on child even though it was removed");
+			Assert.That(mouseMovedEvenAfterRemoved, Is.False, "#4 - MouseMoved should NOT be called on child after it was removed");
+		}
+
+		[Test, ManualTest]
+		public void MouseDownHandledInPanelWithChildShouldReleaseMouseCapture() => ManualForm("Click once on both blue squares,\nthey should both turn green.", form =>
+		{
+			StackLayout CreateClickableBox()
+			{
+				var child = new Panel
+				{
+					BackgroundColor = Colors.Blue,
+					Size = new Size(40, 40)
+				};
+
+				var parent = new Panel();
+				parent.Content = child;
+
+				parent.MouseDown += (sender, e) =>
+				{
+					child.BackgroundColor = child.BackgroundColor == Colors.Blue ? Colors.Green : Colors.Blue;
+					e.Handled = true;
+				};
+
+				return new StackLayout(parent);
+			}
+
+			var section1 = CreateClickableBox();
+
+			var section2 = CreateClickableBox();
+
+			return new TableLayout
+			{
+				Rows = { section1, section2, null },
+				Size = new Size(200, 200),
+				Spacing = new Size(4, 4),
+				Padding = 8
+			};
+		});
+
+		[Test, ManualTest]
+		public void MouseShouldBeCapturedByOtherControl()
+		{
+			bool wasCaptured = false;
+			bool isMouseCaptured = false;
+			bool parent1Entered = false;
+			bool parent2Entered = false;
+			bool parent2ShouldBeEntered = false;
+			bool parent1ShouldNotBeEntered = false;
+			bool panel1ShouldNeverBeCaptured = false;
+			bool panel2ShouldNeverHaveMouseMoveWithoutCapturing = false;
+			var points = new List<PointF>();
+			ManualForm("Click and drag on panel 1, events should go to panel 2.\nThen click and drag on panel 2, it should remain green", form =>
+			{
+				var panel2 = new Drawable
+				{
+					CanFocus = true,
+					Size = new Size(200, 200),
+					BackgroundColor = Colors.Green,
+					Content = "Panel 2"
+				};
+
+				var panel1 = new Drawable
+				{
+					CanFocus = true,
+					Size = new Size(200, 200),
+					BackgroundColor = Colors.Blue,
+					Content = "Panel 1"
+				};
+				panel1.MouseEnter += (sender, e) => Debug.WriteLine("Panel1.MouseEnter");
+				panel1.MouseLeave += (sender, e) => Debug.WriteLine("Panel1.MouseLeave");
+				panel1.MouseUp += (sender, e) => Debug.WriteLine("Panel1.MouseUp");
+				panel1.MouseMove += (sender, e) =>
+				{
+					if (panel1.IsMouseCaptured)
+					{
+						panel1.BackgroundColor = Colors.Red;
+						panel1ShouldNeverBeCaptured = true;
+						form.Close();
+					}
+					Debug.WriteLine("Panel1.MouseMove");
+				};
+				panel1.MouseDown += (sender, e) =>
+				{
+					Debug.WriteLine("Panel1.MouseDown");
+					wasCaptured = panel2.CaptureMouse();
+					isMouseCaptured = panel2.IsMouseCaptured;
+					if (!wasCaptured || !isMouseCaptured)
+						form.Close();
+					e.Handled = true;
+					points = new List<PointF>();
+				};
+				panel1.KeyDown += (sender, e) =>
+				{
+					Debug.WriteLine("Panel1.KeyDown");
+					if (panel2.IsMouseCaptured)
+					{
+						panel2.ReleaseMouseCapture();
+					}
+					else
+					{
+						wasCaptured = panel2.CaptureMouse();
+						isMouseCaptured = panel2.IsMouseCaptured;
+						if (!wasCaptured || !isMouseCaptured)
+							form.Close();
+						points = new List<PointF>();
+					}
+					e.Handled = true;
+				};
+
+				panel2.MouseEnter += (sender, e) => Debug.WriteLine("Panel2.MouseEnter");
+				panel2.MouseLeave += (sender, e) => Debug.WriteLine("Panel2.MouseLeave");
+				panel2.MouseDown += (sender, e) =>
+				{
+					Debug.WriteLine("Panel2.MouseDown");
+					// wasCaptured = panel2.CaptureMouse();
+					// isMouseCaptured = panel2.IsMouseCaptured;
+					points = new List<PointF>
+					{
+						e.Location
+					};
+					panel2.Invalidate();
+					// if (!wasCaptured || !isMouseCaptured)
+					// 	form.Close();
+					e.Handled = true; // should capture the mouse
+				};
+				panel2.MouseUp += (sender, e) =>
+				{
+					Debug.WriteLine("Panel2.MouseUp");
+					panel2.ReleaseMouseCapture();
+				};
+				panel2.MouseMove += (sender, e) =>
+				{
+					Debug.WriteLine("Panel2.MouseMove");
+					if (panel2.IsMouseCaptured)
+					{
+						// note: WinForms does not bubble enter/leave events currently
+						if (!parent2Entered && !Platform.Instance.IsWinForms)
+						{
+							form.Close();
+							return;
+						}
+						parent2ShouldBeEntered = true;
+						if (parent1Entered && !Platform.Instance.IsWinForms)
+						{
+							form.Close();
+							return;
+						}
+						parent1ShouldNotBeEntered = true;
+						points.Add(e.Location);
+						panel2.Invalidate();
+					}
+					else if (e.Buttons != MouseButtons.None)
+					{
+						panel2.BackgroundColor = Colors.Red;
+						panel2ShouldNeverHaveMouseMoveWithoutCapturing = true;
+						form.Close();
+					}
+				};
+				panel2.Paint += (sender, e) =>
+				{
+					if (points.Count > 1)
+						e.Graphics.DrawLines(Colors.White, points);
+				};
+
+
+				var parent1 = new Panel { Content = panel1 };
+				parent1.MouseEnter += (sender, e) =>
+				{
+					parent1Entered = true;
+					Debug.WriteLine($"parent1.MouseEnter");
+				};
+				parent1.MouseLeave += (sender, e) =>
+				{
+					parent1Entered = false;
+					Debug.WriteLine($"parent1.MouseLeave");
+				};
+
+				var parent2 = new Panel { Content = panel2 };
+				parent2.MouseEnter += (sender, e) =>
+				{
+					parent2Entered = true;
+					Debug.WriteLine($"parent2.MouseEnter");
+				};
+				parent2.MouseLeave += (sender, e) =>
+				{
+					parent2Entered = false;
+					Debug.WriteLine($"parent2.MouseLeave");
+				};
+
+				var layout = new TableLayout(
+					new TableRow(null, parent1, null, parent2, null)
+				);
+
+				form.Shown += (sender, e) => panel1.Focus();
+				return layout;
+			});
+			Assert.That(wasCaptured, Is.True, "#1 - Mouse was not able to be captured");
+			Assert.That(isMouseCaptured, Is.True, "#2 - Control.IsMouseCaptured should be true after CaptureMouse() is successful");
+			Assert.That(parent2ShouldBeEntered, Is.True, "#3 - Parent2 should be entered when mouse is captured on Panel2");
+			Assert.That(parent1ShouldNotBeEntered, Is.True, "#4 - Parent1 should not be entered when mouse is captured on Panel2");
+			Assert.That(panel1ShouldNeverBeCaptured, Is.False, "#5 - Panel2 should never be captured");
+			Assert.That(panel2ShouldNeverHaveMouseMoveWithoutCapturing, Is.False, "#6 - Panel2 should not have a MouseMove with a button down without being captured");
+		}
+
+		/// <summary>
+		/// Issue: RH-69389 - When a dialog is shown while dragging (e.g. a package update prompt), the mouse
+		/// capture is taken away from the control being dragged and MouseUp is never fired, so any dragging
+		/// logic never gets a chance to unwind.
+		/// </summary>
+		[Test, ManualTest]
+		public void MouseUpShouldFireWhenDialogIsShownDuringDrag()
+		{
+			var mouseDown = false;
+			string mouseDownResults = null;
+			var dialogShown = false;
+			var dialogClosed = false;
+			var mouseUpCalled = false;
+			var mouseUpBeforeDialogClosed = false;
+			var mouseUpButtons = MouseButtons.None;
+			string mouseUpResults = null;
+			string extraMouseUpResults = null;
+			ManualForm("Click and drag the blue square.\nWhen the dialog appears, release the mouse button and close the dialog.\nThe square should turn green.",
+			form =>
+			{
+				var panel = new Panel { Size = new Size(200, 200), BackgroundColor = Colors.Blue };
+
+				void CheckFinished()
+				{
+					if (mouseUpCalled && dialogClosed)
+						Application.Instance.AsyncInvoke(form.Close);
+				}
+
+				panel.MouseDown += (sender, e) =>
+				{
+					mouseDownResults = $"Panel.MouseDown: {e.Location}, Buttons: {e.Buttons}";
+					if (e.Buttons == MouseButtons.Primary)
+					{
+						mouseDown = true;
+						e.Handled = true; // capture the mouse so we get moves outside the panel
+					}
+				};
+
+				panel.MouseMove += (sender, e) =>
+				{
+					Debug.WriteLine($"Panel.MouseMove: {e.Location}");
+					if (!mouseDown || dialogShown || e.Buttons != MouseButtons.Primary)
+						return;
+
+					// simulate something showing a dialog in the middle of a drag operation, which
+					// takes the mouse capture away from the panel without a MouseUp being fired.
+					dialogShown = true;
+
+					var closeButton = new Button { Text = "Close" };
+					var dialog = new Dialog
+					{
+						Title = "Interrupting Dialog",
+						Content = new StackLayout
+						{
+							Padding = 10,
+							Spacing = 10,
+							HorizontalContentAlignment = HorizontalAlignment.Center,
+							Items =
+							{
+								"Release the mouse button, then close this dialog.",
+								closeButton
+							}
+						},
+						DefaultButton = closeButton,
+						AbortButton = closeButton
+					};
+					closeButton.Click += (s, ee) => dialog.Close();
+					dialog.Closed += (s, ee) =>
+					{
+						dialogClosed = true;
+						CheckFinished();
+					};
+					dialog.ShowModal(form);
+				};
+
+				panel.MouseUp += (sender, e) =>
+				{
+					var results = $"Panel.MouseUp: {e.Location}, Buttons: {e.Buttons}, DialogShown: {dialogShown}, DialogClosed: {dialogClosed}";
+					Debug.WriteLine(results);
+					if (mouseUpCalled)
+					{
+						// the real mouse up should be suppressed as MouseUp was already triggered when the dialog was shown
+						extraMouseUpResults = results;
+						return;
+					}
+					mouseUpResults = results;
+					mouseUpCalled = true;
+					mouseUpBeforeDialogClosed = dialogShown && !dialogClosed;
+					mouseUpButtons = e.Buttons;
+					panel.BackgroundColor = Colors.Green;
+					CheckFinished();
+				};
+
+				return panel;
+			}, allowPass: false);
+
+			Assert.That(dialogShown, Is.True, "#1 - Dialog was not shown, the blue square was not dragged");
+			Assert.That(mouseUpCalled, Is.True, "#2 - MouseUp was not fired after a dialog was shown during a drag");
+			if (mouseUpBeforeDialogClosed)
+			{
+				// the button may not have been released yet, so it shouldn't be mistaken for a click
+				Assert.That(mouseUpButtons, Is.EqualTo(MouseButtons.None), "#3 - MouseUp triggered when the dialog was shown should pass MouseButtons.None");
+				// the real mouse up gets delivered when the modal loop is done, which would also be mistaken for a click
+				Assert.That(extraMouseUpResults, Is.Null, $"#4 - MouseUp should only be triggered once, but was also triggered after the dialog was closed: {extraMouseUpResults}");
+			}
+			// not asserted, only logged: some platforms may only fire the MouseUp after the dialog is dismissed
+			Console.WriteLine(mouseDownResults ?? "No MouseDown event"); // so it shows in the test output for verification
+			Console.WriteLine(mouseUpResults ?? "No MouseUp event"); // so it shows in the test output for verification
+			Console.WriteLine($"MouseUp fired {(mouseUpBeforeDialogClosed ? "while the dialog was shown" : "after the dialog was closed")}");
+		}
+	}
+}

@@ -1,49 +1,22 @@
-﻿using System;
-using Eto.Drawing;
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
-namespace Eto.Mac
+﻿namespace Eto.Mac
 {
 	class ColorizeView : IDisposable
 	{
-		NSImage _image;
-		CGSize? _realSize;
+		CGBitmapContext _context;
+		CGSize _size;
+		bool _flipped;
+		bool _active;
+
+		// tables for the sRGB transfer function, as the colour is applied to linear values
+		static readonly float[] s_toLinear = CreateToLinear();
+		static readonly float[] s_fromLinear = CreateFromLinear();
+		const int FromLinearMax = 4095;
 
 		public Color Color { get; set; }
 
-		static readonly NSString CIOutputImage = new NSString("outputImage");
-		static readonly bool supportsConvertSizeToBacking = ObjCExtensions.InstancesRespondToSelector<NSView>("convertSizeToBacking:");
-
 		public static void Create(ref ColorizeView colorize, Color? color)
 		{
-			if (color == null || color.Value.A <= 0)
+			if (color == null)
 			{
 				colorize?.Dispose();
 				colorize = null;
@@ -55,79 +28,166 @@ namespace Eto.Mac
 			colorize.Color = color.Value;
 		}
 
+		/// <summary>
+		/// Redirects drawing into an offscreen bitmap until <see cref="End"/> draws it colourized.
+		/// </summary>
 		public void Begin(CGRect frame, NSView controlView)
 		{
+			Restore();
+
 			var size = controlView.Frame.Size;
 			if (size.Width <= 0 || size.Height <= 0)
-			{
-				_realSize = null;
 				return;
-			}
-			if (_image == null || size != _image.Size)
+
+			var scale = controlView.Window?.BackingScaleFactor ?? NSScreen.MainScreen?.BackingScaleFactor ?? 1;
+			var width = (nint)Math.Ceiling(size.Width * scale);
+			var height = (nint)Math.Ceiling(size.Height * scale);
+
+			if (_context == null || _context.Width != width || _context.Height != height)
 			{
-				if (_image != null)
-					_image.Dispose();
+				_context?.Dispose();
+				using var colorSpace = CGColorSpace.CreateSrgb();
+				_context = new CGBitmapContext(IntPtr.Zero, width, height, 8, 4 * width, colorSpace, CGBitmapFlags.PremultipliedLast);
+			}
+			else
+				_context.ClearRect(new CGRect(0, 0, width, height));
 
-				_image = new NSImage(size);
+			_size = size;
+			_flipped = controlView.IsFlipped;
+
+			_context.SaveState();
+			_context.ScaleCTM(scale, scale);
+			if (_flipped)
+			{
+				_context.TranslateCTM(0, size.Height);
+				_context.ScaleCTM(1, -1);
 			}
 
-			if (supportsConvertSizeToBacking)
-				_realSize = controlView.ConvertSizeToBacking(size);
-			else
-				_realSize = controlView.ConvertSizeToBase(size);
-
-			_image.LockFocusFlipped(!controlView.IsFlipped);
-			NSGraphicsContext.CurrentContext.GraphicsPort.ClearRect(new CGRect(CGPoint.Empty, size));
+			NSGraphicsContext.GlobalSaveGraphicsState();
+			NSGraphicsContext.CurrentContext = NSGraphicsContext.FromCGContext(_context, _flipped);
+			_active = true;
 		}
 
+		/// <summary>
+		/// Draws what was drawn since <see cref="Begin"/> as a grayscale image tinted with <see cref="Color"/>.
+		/// </summary>
 		public void End()
 		{
-			if (_image == null || _realSize == null)
+			if (!Restore())
 				return;
-
-			_image.UnlockFocus();
-
-			var ciImage = CIImage.FromCGImage(_image.CGImage);
-
-
-#pragma warning disable CS0618 // Image => InputImage in Xamarin.Mac 6.6
-			var filter2 = new CIColorControls();
-			filter2.SetDefaults();
-			filter2.Image = ciImage;
-			filter2.Saturation = 0.0f;
-			ciImage = (CIImage)filter2.ValueForKey(CIOutputImage);
-
-			var filter3 = new CIColorMatrix();
-			filter3.SetDefaults();
-			filter3.Image = ciImage;
-#pragma warning restore CS0618
 
 			var cgColor = Color.ToCG();
 			var components = cgColor.Components;
+			if (components.Length == 0)
+				return;
+			var alpha = (float)cgColor.Alpha;
+			if (alpha <= 0)
+				return; // nothing would be visible
+
+			// same as CIColorControls with no saturation, then CIColorMatrix moving the gray into the colour
+			float r, g, b;
 			if (components.Length >= 3)
 			{
-				filter3.RVector = new CIVector(0, components[0], 0);
-				filter3.GVector = new CIVector(components[1], 0, 0);
-				filter3.BVector = new CIVector(0, 0, components[2]);
-				filter3.AVector = new CIVector(0, 0, 0, cgColor.Alpha);
+				r = (float)components[0];
+				g = (float)components[1];
+				b = (float)components[2];
 			}
-			ciImage = (CIImage)filter3.ValueForKey(CIOutputImage);
+			else
+				r = g = b = (float)components[0];
 
-			// create separate context so we can force using the software renderer, which is more than fast enough for this
-			var ciContext = CIContext.FromContext(NSGraphicsContext.CurrentContext.GraphicsPort, new CIContextOptions { UseSoftwareRenderer = true });
-			ciContext.DrawImage(ciImage, new CGRect(CGPoint.Empty, _image.Size), new CGRect(CGPoint.Empty, _realSize.Value));
+			Colorize(_context, r, g, b, alpha);
 
-			ciImage.Dispose();
-			ciContext.Dispose();
-			filter2.Dispose();
-			filter3.Dispose();
+			using var image = _context.ToImage();
+			if (image == null)
+				return;
+
+			var ctx = NSGraphicsContext.CurrentContext?.CGContext;
+			if (ctx == null)
+				return;
+
+			ctx.SaveState();
+			if (_flipped)
+			{
+				ctx.TranslateCTM(0, _size.Height);
+				ctx.ScaleCTM(1, -1);
+			}
+			ctx.DrawImage(new CGRect(CGPoint.Empty, _size), image);
+			ctx.RestoreState();
+		}
+
+		bool Restore()
+		{
+			if (!_active)
+				return false;
+			_active = false;
+
+			NSGraphicsContext.GlobalRestoreGraphicsState();
+			_context.RestoreState();
+			return true;
+		}
+
+		static unsafe void Colorize(CGBitmapContext context, float r, float g, float b, float alpha)
+		{
+			var data = (byte*)context.Data;
+			var width = (int)context.Width;
+			var height = (int)context.Height;
+			var bytesPerRow = (int)context.BytesPerRow;
+			var toLinear = s_toLinear;
+			var fromLinear = s_fromLinear;
+
+			for (int y = 0; y < height; y++)
+			{
+				var p = data + y * bytesPerRow;
+				for (int x = 0; x < width; x++, p += 4)
+				{
+					int a = p[3];
+					if (a == 0)
+						continue;
+
+					// unpremultiply, then take the luminance (Rec. 709) in linear space
+					var half = a / 2;
+					var luma = 0.2126f * toLinear[Math.Min(255, (p[0] * 255 + half) / a)]
+						+ 0.7152f * toLinear[Math.Min(255, (p[1] * 255 + half) / a)]
+						+ 0.0722f * toLinear[Math.Min(255, (p[2] * 255 + half) / a)];
+
+					var outAlpha = a * alpha;
+					p[0] = (byte)(FromLinear(fromLinear, luma * r) * outAlpha + 0.5f);
+					p[1] = (byte)(FromLinear(fromLinear, luma * g) * outAlpha + 0.5f);
+					p[2] = (byte)(FromLinear(fromLinear, luma * b) * outAlpha + 0.5f);
+					p[3] = (byte)(outAlpha + 0.5f);
+				}
+			}
+		}
+
+		static float FromLinear(float[] table, float value) => table[(int)(Math.Min(1f, Math.Max(0f, value)) * FromLinearMax + 0.5f)];
+
+		static float[] CreateToLinear()
+		{
+			var table = new float[256];
+			for (int i = 0; i < table.Length; i++)
+			{
+				var c = i / 255.0;
+				table[i] = (float)(c <= 0.04045 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4));
+			}
+			return table;
+		}
+
+		static float[] CreateFromLinear()
+		{
+			var table = new float[FromLinearMax + 1];
+			for (int i = 0; i < table.Length; i++)
+			{
+				var c = (double)i / FromLinearMax;
+				table[i] = (float)(c <= 0.0031308 ? c * 12.92 : 1.055 * Math.Pow(c, 1 / 2.4) - 0.055);
+			}
+			return table;
 		}
 
 		public void Dispose()
 		{
-			_image?.Dispose();
-			_image = null;
+			Restore();
+			_context?.Dispose();
+			_context = null;
 		}
 	}
 }
-

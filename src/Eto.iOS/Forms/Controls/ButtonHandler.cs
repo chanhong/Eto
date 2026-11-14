@@ -1,7 +1,3 @@
-using System;
-using System.Reflection;
-using Eto.Drawing;
-using Eto.Forms;
 using UIKit;
 
 namespace Eto.iOS.Forms.Controls
@@ -66,6 +62,12 @@ namespace Eto.iOS.Forms.Controls
 		}
 
 		public ButtonImagePosition ImagePosition
+		{
+			get;
+			set;
+		}
+
+		public bool ImageNextToText
 		{
 			get;
 			set;

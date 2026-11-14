@@ -1,14 +1,9 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-using Eto.GtkSharp.Drawing;
-using Gtk;
-
 namespace Eto.GtkSharp.Forms.Controls
 {
 	public class CheckBoxHandler : GtkControl<Gtk.CheckButton, CheckBox, CheckBox.ICallback>, CheckBox.IHandler
 	{
 		readonly Gtk.EventBox box;
+		bool _alwaysShowMnemonic;
 
 		public override Gtk.Widget ContainerControl => box;
 
@@ -16,7 +11,7 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		public CheckBoxHandler()
 		{
-			Control = new Gtk.CheckButton();
+			Control = new Gtk.CheckButton { UseUnderline = true };
 			box = new Gtk.EventBox { Child = Control };
 		}
 
@@ -41,24 +36,31 @@ namespace Eto.GtkSharp.Forms.Controls
 			public void HandleToggled(object sender, EventArgs e)
 			{
 				var h = Handler;
+				if (h == null)
+					return;
 				var c = h.Control;
 				if (toggling)
 					return;
 
 				toggling = true;
-				if (h.ThreeState)
+				try
 				{
-					if (!c.Inconsistent && c.Active)
-						c.Inconsistent = true;
-					else if (c.Inconsistent)
+					if (h.ThreeState)
 					{
-						c.Inconsistent = false;
-						c.Active = true;
+						if (!c.Inconsistent && c.Active)
+							c.Inconsistent = true;
+						else if (c.Inconsistent)
+						{
+							c.Inconsistent = false;
+							c.Active = true;
+						}
 					}
+					h.Callback.OnCheckedChanged(h.Widget, EventArgs.Empty);
 				}
-				h.Callback.OnCheckedChanged(h.Widget, EventArgs.Empty);
-				toggling = false;
-
+				finally
+				{
+					toggling = false;
+				}
 			}
 		}
 
@@ -67,7 +69,10 @@ namespace Eto.GtkSharp.Forms.Controls
 			get { return Control.Label.ToEtoMnemonic(); }
 			set {
 				var needsFont = Control.Child == null && Widget.Properties.ContainsKey(GtkControl.Font_Key);
-				Control.Label = value.ToPlatformMnemonic();
+				Control.Label = Control.UseUnderline ? value.ToPlatformMnemonic() : value;
+				var label = Control.Child as Gtk.Label;
+				if (label != null)
+					label.Pattern = Control.UseUnderline && _alwaysShowMnemonic ? GtkMnemonicHelper.ToPatternWithMnemonicUnderline(value) : null;
 				if (needsFont)
 					Control.Child?.SetFont(Font.ToPango());
 			}
@@ -78,20 +83,25 @@ namespace Eto.GtkSharp.Forms.Controls
 			get { return Control.Inconsistent ? null : (bool?)Control.Active; }
 			set
 			{
-				if (value == null)
+				// GTK raises Toggled for assignments too; only clicks should advance the three-state cycle.
+				var oldValue = Checked;
+
+				Control.Toggled -= Connector.HandleToggled;
+
+				try
 				{
-					Control.Inconsistent = true;
+					Control.Inconsistent = value == null;
+
+					if (value != null)
+						Control.Active = value.Value;
+				}
+				finally
+				{
+					Control.Toggled += Connector.HandleToggled;
+				}
+
+				if (Checked != oldValue)
 					Callback.OnCheckedChanged(Widget, EventArgs.Empty);
-				}
-				else
-				{
-					// gtk doesn't trigger an event if just Inconsistent has changed.
-					var hasChanged = (Control.Inconsistent && Control.Active == value.Value);
-					Control.Inconsistent = false;
-					Control.Active = value.Value;
-					if (hasChanged)
-						Callback.OnCheckedChanged(Widget, EventArgs.Empty);
-				}
 			}
 		}
 
@@ -116,6 +126,31 @@ namespace Eto.GtkSharp.Forms.Controls
 				child.SetForeground(value, GtkStateFlags.Normal);
 				child.SetForeground(value, GtkStateFlags.Active);
 				child.SetForeground(value, GtkStateFlags.Prelight);
+			}
+		}
+
+		public bool UseMnemonic
+		{
+			get => Control.UseUnderline;
+			set
+			{
+				if (value == Control.UseUnderline)
+					return; // no change
+				var text = Text;
+				Control.UseUnderline = value;
+				Text = text;
+			}
+		}
+		
+		public bool AlwaysShowMnemonic
+		{
+			get => _alwaysShowMnemonic;
+			set
+			{
+				if (_alwaysShowMnemonic == value)
+					return;
+				_alwaysShowMnemonic = value;
+				Text = Text;
 			}
 		}
 

@@ -1,14 +1,8 @@
-using System;
-using Eto.Drawing;
-using Eto.Forms;
 using Eto.iOS.Drawing;
 using SD = System.Drawing;
 using Foundation;
 using UIKit;
 using Eto.Mac.Forms;
-using System.Collections.Generic;
-using System.Linq;
-
 namespace Eto.iOS.Forms
 {
 	public interface IIosViewControllerSource 
@@ -340,6 +334,9 @@ namespace Eto.iOS.Forms
 			get { return null; }
 			set { }
 		}
+
+		public virtual void AddGesture(Gesture item) { }
+		public virtual void ClearGestures() { }
+		public virtual void RemoveGesture(Gesture item) { }
 	}
 }
-

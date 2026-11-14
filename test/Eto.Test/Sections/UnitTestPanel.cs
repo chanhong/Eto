@@ -1,22 +1,8 @@
-using System;
-using System.Reflection;
-using Eto.Forms;
-using System.Collections.Generic;
 using NUnit.Framework.Internal;
 using NUnit.Framework.Api;
-using System.Threading.Tasks;
-using Eto.Drawing;
-using System.Linq;
 using NUnit.Framework.Interfaces;
-using System.IO;
-using System.Collections.ObjectModel;
-using System.Text.RegularExpressions;
-using System.Diagnostics;
-using System.Text;
 using System.Collections.Concurrent;
-using System.Collections;
-using System.ComponentModel;
-using System.Threading;
+using Eto.Test.UnitTests;
 
 namespace Eto.Test.Sections
 {
@@ -435,6 +421,14 @@ namespace Eto.Test.Sections
 
 		public ICollection<TestAttachment> TestAttachments => Results.SelectMany(r => r.TestAttachments).ToList();
 
+		public int TotalCount => Results.Sum(r => r.TotalCount);
+
+		public int InitiatedCount => Results.Sum(r => r.InitiatedCount);
+
+		public int CompletedCount => Results.Sum(r => r.CompletedCount);
+
+		public int AssertionResultCount => Results.Sum(r => r.AssertionResultCount);
+
 		public TNode AddToXml(TNode parentNode, bool recursive) => throw new NotImplementedException();
 
 		public TNode ToXml(bool recursive) => null;
@@ -535,7 +529,7 @@ namespace Eto.Test.Sections
 		TaskCompletionSource<ITestResult> tcs;
 		UnitTestProgressEventArgs progressArgs;
 		List<ITestAssemblyRunner> runnerCache;
-		ITestAssemblyBuilder builder = new DefaultTestAssemblyBuilder();
+		ITestAssemblyBuilder builder = new SingleFileDefaultTestAssemblyBuilder();
 
 		public IList<UnitTestSource> Sources => sources;
 
@@ -1158,8 +1152,8 @@ namespace Eto.Test.Sections
 					ImageBinding = Binding.Property((UnitTestItem m) => m.Image)
 				}
 			});
-
-			tree.Activated += (sender, e) =>
+			
+			void RunSelectedTest()
 			{
 				if (runner.IsRunning)
 					return;
@@ -1171,6 +1165,21 @@ namespace Eto.Test.Sections
 					{
 						RunTests(filter);
 					}
+				}
+			}
+
+			tree.CellDoubleClick += (sender, e) =>
+			{
+				RunSelectedTest();
+				e.Handled = true;
+			};
+			
+			tree.KeyDown += (sender, e) =>
+			{
+				if (e.KeyData == Keys.Enter)
+				{
+					RunSelectedTest();
+					e.Handled = true;
 				}
 			};
 
@@ -1236,7 +1245,6 @@ namespace Eto.Test.Sections
 
 			if (showLog)
 			{
-				Size = new Size(950, 600);
 				log = new TextArea { Size = new Size(400, 300), ReadOnly = true, Wrap = false };
 
 				base.Content = new Splitter
@@ -1526,20 +1534,27 @@ namespace Eto.Test.Sections
 			var filter = CreateFilter();
 			Task.Run(() =>
 			{
-				var map = new Dictionary<object, UnitTestItem>();
-				var tests = Runner.GetTests();
-				// always show all categories
-				var categories = AvailableCategories ?? Runner.GetCategories(TestFilter.Empty).OrderBy(r => r);
-				var totalTestCount = Runner.GetTestCount(filter);
-				var testSuites = tests.Select(suite => ToTree(suite.Assembly, suite, filter, map)).Where(r => r != null);
-				var treeData = new TreeGridItem(testSuites);
-				Application.Instance.AsyncInvoke(() =>
+				try
 				{
-					  AvailableCategories = categories;
-					  testCountLabel.Text = $"{totalTestCount} Tests";
-					  testMap = map;
-					  tree.DataStore = treeData;
-				  });
+					var map = new Dictionary<object, UnitTestItem>();
+					var tests = Runner.GetTests();
+					// always show all categories
+					var categories = AvailableCategories ?? Runner.GetCategories(TestFilter.Empty).OrderBy(r => r);
+					var totalTestCount = Runner.GetTestCount(filter);
+					var testSuites = tests.Select(suite => ToTree(suite.Assembly, suite, filter, map)).Where(r => r != null);
+					var treeData = new TreeGridItem(testSuites);
+					Application.Instance.AsyncInvoke(() =>
+					{
+						AvailableCategories = categories;
+						testCountLabel.Text = $"{totalTestCount} Tests";
+						testMap = map;
+						tree.DataStore = treeData;
+					});
+				}
+				catch (Exception ex)
+				{
+					Debug.WriteLine($"Error loading tests: {ex}");
+				}
 			});
 		}
 
@@ -1549,6 +1564,7 @@ namespace Eto.Test.Sections
 			public ITest Test { get; set; }
 			public Image Image { get; set; }
 			public ITestFilter Filter { get; set; }
+			public ITestResult Result { get; set; }
 		}
 
 		TreeGridItem ToTree(Assembly assembly, ITest test, ITestFilter filter, IDictionary<object, UnitTestItem> map)
@@ -1578,6 +1594,7 @@ namespace Eto.Test.Sections
 			{
 				Text = name,
 				Test = test,
+				Result = result,
 				Image = GetStateImage(result),
 				Filter = new SingleTestFilter { Test = test, Assembly = assembly }
 			};

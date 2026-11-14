@@ -1,15 +1,20 @@
-using System;
 using NUnit.Framework;
-using Eto.Drawing;
-using System.Linq;
-using Eto.Forms;
-using System.IO;
-
 namespace Eto.Test.UnitTests.Drawing
 {
 	[TestFixture]
 	public class IconTests : TestBase
 	{
+		[Test]
+		public void DisposingIconShouldPreserveSourceBitmap() => Invoke(() =>
+		{
+			using var bitmap = new Bitmap(20, 20, PixelFormat.Format32bppRgba);
+			using var icon = new Icon(1, bitmap);
+			icon.Dispose();
+			Assert.That(bitmap.Size, Is.EqualTo(new Size(20, 20)));
+			bitmap.SetPixel(0, 0, Colors.Red);
+			Assert.That(bitmap.GetPixel(0, 0), Is.EqualTo(Colors.Red));
+		});
+
 		[TestCase(.25f, .5f)]
 		[TestCase(1f, 1f)]
 		[TestCase(1.5f, 1.5f)]
@@ -21,14 +26,14 @@ namespace Eto.Test.UnitTests.Drawing
 		{
 			var icon = TestIcons.Logo;
 
-			Assert.IsNotNull(icon, "#1");
+			Assert.That(icon, Is.Not.Null, "#1");
 			var expectedScales = new [] { 0.5f, 1f, 1.5f, 2f, 4f };
 
-			Assert.AreEqual(expectedScales.Length, icon.Frames.Count(), "#2 - Should be a representation for each image with @<scale>");
+			Assert.That(icon.Frames.Count(), Is.EqualTo(expectedScales.Length), "#2 - Should be a representation for each image with @<scale>");
 
-			CollectionAssert.AreEqual(expectedScales, icon.Frames.Select(r => r.Scale).OrderBy(r => r), "#3 - scales weren't loaded");
+			Assert.That(icon.Frames.Select(r => r.Scale).OrderBy(r => r), Is.EqualTo(expectedScales), "#3 - scales weren't loaded");
 
-			Assert.AreEqual(expectedResult, icon.GetFrame(scale).Scale, "#4");
+			Assert.That(icon.GetFrame(scale).Scale, Is.EqualTo(expectedResult), "#4");
 		}
 
 		[Test]
@@ -36,9 +41,9 @@ namespace Eto.Test.UnitTests.Drawing
 		{
 			var icon = TestIcons.TestIcon;
 
-			Assert.IsNotNull(icon, "#1");
+			Assert.That(icon, Is.Not.Null, "#1");
 
-			Assert.AreEqual(5, icon.Frames.Count(), "#2");
+			Assert.That(icon.Frames.Count(), Is.EqualTo(5), "#2");
 
 			var sizes = new []
 			{
@@ -48,9 +53,49 @@ namespace Eto.Test.UnitTests.Drawing
 				new Size(64, 64),
 				new Size(128, 128),
 			};
-			CollectionAssert.AreEquivalent(sizes, icon.Frames.Select(r => r.PixelSize), "#3");
+			Assert.That(icon.Frames.Select(r => r.PixelSize), Is.EquivalentTo(sizes), "#3");
 
-			Assert.IsTrue(icon.Frames.All(r => r.Scale == 1), "#4");
+			Assert.That(icon.Frames.All(r => r.Scale == 1), Is.True, "#4");
+		}
+
+		[TestCase("TestIconPng.ico", new[] { 256 })]
+		[TestCase("TestIconMixed.ico", new[] { 16, 256 })]
+		public void IconFromIcoShouldSupportPngCompressedFrames(string resourceName, int[] sizes)
+		{
+			using var stream = GetType().Assembly.GetManifestResourceStream($"Eto.Test.Images.{resourceName}");
+			using var icon = new Icon(stream);
+			Assert.That(icon.Frames.Select(r => r.PixelSize),
+				Is.EquivalentTo(sizes.Select(size => new Size(size, size))));
+		}
+
+		[Test]
+		public void IconFromDisposedStreamShouldProvideFrames()
+		{
+			Icon icon;
+			using (var ms = new MemoryStream())
+			{
+				using (var source = GetType().Assembly.GetManifestResourceStream("Eto.Test.Images.TestIcon.ico"))
+					source.CopyTo(ms);
+				ms.Position = 0;
+				icon = new Icon(ms);
+			}
+			// Frames are first read after the stream is gone, so the handler must keep its own copy of the data.
+			using (icon)
+			using (var expected = TestIcons.TestIcon)
+			{
+				Assert.That(icon.Size, Is.EqualTo(expected.Size), "#1");
+				Assert.That(icon.Frames.Select(r => r.PixelSize), Is.EquivalentTo(expected.Frames.Select(r => r.PixelSize)), "#2");
+			}
+		}
+
+		[Test]
+		public void DisposedIconShouldNotExposeFrames()
+		{
+			// Nothing reads Frames before Dispose, so this also covers an icon whose frames were never loaded.
+			var icon = TestIcons.TestIcon;
+			icon.Dispose();
+			Assert.That(icon.IsDisposed, Is.True, "#1");
+			Assert.Throws<ObjectDisposedException>(() => icon.Frames.Count(), "#2");
 		}
 
 		[TestCase(.50f, 64, null)]
@@ -63,12 +108,12 @@ namespace Eto.Test.UnitTests.Drawing
 			var icon = TestIcons.TestIcon;
 
 			// sanity check
-			Assert.IsNotNull(icon, "#1");
-			Assert.AreEqual(5, icon.Frames.Count(), "#2");
-			Assert.IsTrue(icon.Frames.All(r => r.Scale == 1), "#5");
+			Assert.That(icon, Is.Not.Null, "#1");
+			Assert.That(icon.Frames.Count(), Is.EqualTo(5), "#2");
+			Assert.That(icon.Frames.All(r => r.Scale == 1), Is.True, "#5");
 
 			var fs = fittingSize != null ? (Size?)new Size(fittingSize.Value, fittingSize.Value) : null;
-			Assert.AreEqual(new Size(expectedSize, expectedSize), icon.GetFrame(scale, fs).PixelSize, "");
+			Assert.That(icon.GetFrame(scale, fs).PixelSize, Is.EqualTo(new Size(expectedSize, expectedSize)), "");
 		}
 
 		[TestCase("Some.File.That.Does.Not.Exist.png")]
@@ -99,15 +144,15 @@ namespace Eto.Test.UnitTests.Drawing
 		public void BitmapDpiShouldNotAffectIconSize(string resourceName, int width, int height)
 		{
 			var icon = Icon.FromResource(resourceName);
-			Assert.AreEqual(width, icon.Size.Width, "Icon width is incorrect");
-			Assert.AreEqual(height, icon.Size.Height, "Icon width is incorrect");
+			Assert.That(icon.Size.Width, Is.EqualTo(width), "Icon width is incorrect");
+			Assert.That(icon.Size.Height, Is.EqualTo(height), "Icon width is incorrect");
 
 			int i = 0;
 			foreach (var frame in icon.Frames)
 			{
 				i++;
-				Assert.AreEqual(width, frame.Size.Width, $"Frame #{i} with scale {frame.Scale} does not match icon width");
-				Assert.AreEqual(height, frame.Size.Height, $"Frame #{i} with scale {frame.Scale} does not match icon height");
+				Assert.That(frame.Size.Width, Is.EqualTo(width), $"Frame #{i} with scale {frame.Scale} does not match icon width");
+				Assert.That(frame.Size.Height, Is.EqualTo(height), $"Frame #{i} with scale {frame.Scale} does not match icon height");
 			}
 		}
 
@@ -119,9 +164,9 @@ namespace Eto.Test.UnitTests.Drawing
 
 			var icon = bmp.WithSize(32, 32);
 
-			Assert.AreEqual(bmp.Size, oldSize, "#1");
-			Assert.AreEqual(new Size(32, 32), icon.Size, "#2");
-			Assert.AreEqual(bmp.Size, icon.Frames.First().PixelSize, "#3");
+			Assert.That(oldSize, Is.EqualTo(bmp.Size), "#1");
+			Assert.That(icon.Size, Is.EqualTo(new Size(32, 32)), "#2");
+			Assert.That(icon.Frames.First().PixelSize, Is.EqualTo(bmp.Size), "#3");
 		}
 
 		[Test]

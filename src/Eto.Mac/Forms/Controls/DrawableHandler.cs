@@ -1,70 +1,71 @@
-using Eto.Drawing;
-using Eto.Forms;
 using Eto.Mac.Drawing;
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
 
 namespace Eto.Mac.Forms.Controls
 {
-	public class DrawableHandler : MacPanel<DrawableHandler.EtoDrawableView, Drawable, Drawable.ICallback>, Drawable.IHandler
+	public class DrawableHandler : MacPanel<DrawableHandler.EtoDrawableView, Drawable, Drawable.ICallback>, Drawable.IHandler, IMacTextInputHandler
 	{
 		Brush backgroundBrush;
 		Color backgroundColor;
+		string markedText = string.Empty;
+		NSRange selectedRange;
+		bool isComposing;
 
-		public bool SupportsCreateGraphics { get { return true; } }
+		static readonly object MouseDownCanMoveWindow_Key = new object();
 
-		public override NSView ContainerControl { get { return Control; } }
+		public bool SupportsCreateGraphics => false;
+
+		public override NSView ContainerControl => Control;
+		
+		public bool? MouseDownCanMoveWindow
+		{
+			get => Widget.Properties.Get<bool?>(MouseDownCanMoveWindow_Key);
+			set => Widget.Properties.Set(MouseDownCanMoveWindow_Key, value);
+		}
 
 		public class EtoDrawableView : MacPanelView
 		{
 			DrawableHandler Drawable => Handler as DrawableHandler;
+			
+			public EtoDrawableView()
+			{
+			}
+
+			public EtoDrawableView(NativeHandle handle) : base(handle)
+			{
+			}
 
 			public override void DrawRect(CGRect dirtyRect)
 			{
 				var drawable = Drawable;
 				if (drawable == null)
 					return;
-				if (!IsFlipped)
-					dirtyRect.Y = Frame.Height - dirtyRect.Y - dirtyRect.Height;
-				if (dirtyRect.X % 1.0f > 0f)
-					dirtyRect.Width += 1;
-				if (dirtyRect.Y % 1.0f > 0f)
-					dirtyRect.Height += 1;
+
 				ApplicationHandler.QueueResizing = true;
-				drawable.DrawRegion(Rectangle.Ceiling(dirtyRect.ToEto()));
+				drawable.DrawRegion(dirtyRect);
 				ApplicationHandler.QueueResizing = false;
 			}
 
+			// public override bool IsFlipped => true;  // uncomment to test flipped views with GraphicsHandler.
+
 			public bool CanFocus { get; set; }
 
-			public override bool AcceptsFirstResponder() => CanFocus;
+			public override bool MouseDownCanMoveWindow
+			{
+				get
+				{
+					if (Handler is DrawableHandler drawableHandler)
+					{
+						var canMove = drawableHandler.MouseDownCanMoveWindow;
+						if (canMove.HasValue)
+							return canMove.Value;
+					}
+					if (AcceptsFirstResponder() || AcceptsFirstMouse(NSApplication.SharedApplication.CurrentEvent))
+						return false;
+					return base.MouseDownCanMoveWindow;
+				}
+			}
 
-			public override bool AcceptsFirstMouse(NSEvent theEvent) => CanFocus || base.AcceptsFirstMouse(theEvent);
+			public override bool AcceptsFirstResponder() => CanFocus && Drawable?.Enabled == true;
 
 			public override NSView HitTest(CGPoint aPoint)
 			{
@@ -81,7 +82,7 @@ namespace Eto.Mac.Forms.Controls
 
 		public Graphics CreateGraphics()
 		{
-			return new Graphics(new GraphicsHandler(Control));
+			throw new NotSupportedException();
 		}
 
 		public override Color BackgroundColor
@@ -135,27 +136,161 @@ namespace Eto.Mac.Forms.Controls
 			base.Invalidate(rect, invalidateChildren);
 		}
 
-		void DrawRegion(Rectangle rect)
+		void DrawRegion(CGRect dirtyRect)
 		{
 			var context = NSGraphicsContext.CurrentContext;
-			if (context != null)
-			{
-				var handler = new GraphicsHandler(Control, context, (float)Control.Frame.Height, Control.IsFlipped);
-				using (var graphics = new Graphics(handler))
-				{
-					if (backgroundBrush != null)
-						graphics.FillRectangle(backgroundBrush, rect);
+			if (context == null)
+				return;
+				
+			var bounds = Control.Bounds;
 
-					var widget = Widget;
-					if (widget != null)
-						Callback.OnPaint(widget, new PaintEventArgs(graphics, rect));
-				}
+			// restrict dirty rect to the bounds of the drawable
+			// macOS can give us dirty rects outside this range
+			var dirty = dirtyRect.ToEto();
+			dirty.Restrict(bounds.ToEto());
+
+			var handler = new GraphicsHandler(Control, context, (float)bounds.Height, dirty.ToNS());
+
+			// dirty rect should be flipped when passed to Drawabe.Paint event
+			if (!Control.IsFlipped)
+				dirty.Y = (float)(bounds.Height - dirty.Y - dirty.Height);
+			
+			using (var graphics = new Graphics(handler))
+			{
+				if (backgroundBrush != null)
+					graphics.FillRectangle(backgroundBrush, dirty);
+
+				var widget = Widget;
+				if (widget != null)
+					Callback.OnPaint(widget, new PaintEventArgs(graphics, dirty));
 			}
 		}
 
 		public void Update(Rectangle rect)
 		{
 			Control.DisplayRect(rect.ToNS());
+		}
+
+		public void CancelTextComposition()
+		{
+			Control.InputContext?.DiscardMarkedText();
+			EndComposition(raiseEvent: true);
+		}
+
+		public void CommitTextComposition()
+		{
+			if (!isComposing && string.IsNullOrEmpty(markedText))
+				return;
+
+			var text = markedText;
+			EndComposition(raiseEvent: true);
+			Control.InputContext?.DiscardMarkedText();
+
+			if (string.IsNullOrEmpty(text))
+				return;
+
+			var args = new TextInputEventArgs(text);
+			Callback.OnTextInput(Widget, args);
+		}
+
+		public override void AttachEvent(string id)
+		{
+			switch (id)
+			{
+				case Drawable.TextCompositionEvent:
+				case Drawable.TextInsertionBoundsRequestedEvent:
+					if (EnsureTextInputImplemented())
+						HandleEvent(Eto.Forms.Control.KeyDownEvent);
+					break;
+				default:
+					base.AttachEvent(id);
+					break;
+			}
+		}
+
+		protected override bool OnAcceptsFirstMouse(NSEvent theEvent)
+		{
+			if (CanFocus)
+				return true;
+			return base.OnAcceptsFirstMouse(theEvent);
+		}
+
+		public override void OnKeyDown(KeyEventArgs e)
+		{
+			if (isComposing)
+			{
+				// if we're composing, we need to handle the key events to properly update the composition text
+				// however, we don't want to trigger any other key events (e.g. shortcuts) while composing, so we just return here
+				return;
+			}
+			base.OnKeyDown(e);
+		}
+
+		bool IMacTextInputHandler.HasMarkedText => isComposing;
+
+		NSRange IMacTextInputHandler.MarkedRange => isComposing ? new NSRange(0, markedText.Length) : new NSRange(NSRange.NotFound, 0);
+
+		NSRange IMacTextInputHandler.SelectedRange => selectedRange;
+
+		void IMacTextInputHandler.FinishComposition() => EndComposition(raiseEvent: true);
+
+		void IMacTextInputHandler.SetMarkedText(string text, NSRange selectedRange, NSRange replacementRange)
+		{
+			markedText = text ?? string.Empty;
+			this.selectedRange = selectedRange;
+
+			isComposing = true;
+			var args = new TextCompositionEventArgs(markedText, true);
+			Callback.OnTextComposition(Widget, args);
+			if (this is IMacViewHandler handler)
+				handler.TextInputCancelled |= args.Handled;
+
+			Invalidate(false);
+		}
+
+		void IMacTextInputHandler.UnmarkText()
+		{
+			EndComposition(raiseEvent: true);
+		}
+
+		CGRect IMacTextInputHandler.FirstRectForCharacterRange(NSRange range)
+		{
+			var view = Control;
+			if (view == null)
+				return CGRect.Empty;
+
+			var args = new TextInsertionBoundsEventArgs();
+			Callback.OnTextInsertionBoundsRequested(Widget, args);
+			var localRect = args.Bounds ?? new RectangleF(0, 0, 1, (float)Math.Max(1, view.Bounds.Height));
+			if (localRect.Width <= 0)
+				localRect.Width = 1;
+			if (localRect.Height <= 0)
+				localRect.Height = 1;
+
+			var rect = localRect.ToNS();
+			if (!view.IsFlipped)
+				rect.Y = view.Bounds.Height - rect.Y - rect.Height;
+
+			rect = view.ConvertRectToView(rect, null);
+			return view.Window?.ConvertRectToScreen(rect) ?? CGRect.Empty;
+		}
+
+		void EndComposition(bool raiseEvent)
+		{
+			if (!isComposing && string.IsNullOrEmpty(markedText))
+				return;
+
+			markedText = string.Empty;
+			selectedRange = new NSRange(0, 0);
+			isComposing = false;
+
+			if (raiseEvent)
+			{
+				var args = new TextCompositionEventArgs(string.Empty, false);
+				Callback.OnTextComposition(Widget, args);
+			}
+
+			Invalidate(false);
 		}
 	}
 }

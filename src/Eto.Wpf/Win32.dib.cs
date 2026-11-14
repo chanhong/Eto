@@ -1,7 +1,3 @@
-using System;
-using System.IO;
-using Eto.Drawing;
-
 namespace Eto
 {
 	partial class Win32
@@ -9,7 +5,7 @@ namespace Eto
 		public static Bitmap FromDIB(Stream ms)
 		{
 			var header = new byte[40];
-			ms.Read(header, 0, header.Length);
+			ms.ReadExactly(header, 0, header.Length);
 			var size = BitConverter.ToInt32(header, 0);
 			var width = BitConverter.ToInt32(header, 4);
 			var height = BitConverter.ToInt32(header, 8);
@@ -25,7 +21,7 @@ namespace Eto
 				// three dwords, each specifies the bits each RGB components takes
 				// we require each takes one byte
 				var segments = new byte[sizeof(int) * 3];
-				ms.Read(segments, 0, segments.Length);
+				ms.ReadExactly(segments, 0, segments.Length);
 				var rcomp = BitConverter.ToInt32(segments, 0);
 				var gcomp = BitConverter.ToInt32(segments, 4);
 				var bcomp = BitConverter.ToInt32(segments, 8);
@@ -45,9 +41,8 @@ namespace Eto
 						var g = ms.ReadByte();
 						var r = ms.ReadByte();
 						var a = ms.ReadByte();
-						var af = a / 255f;
-						if (af > 0)
-							bd.SetPixel(x, y, new Color(r / af, g / af, b / af, af));
+						if (a > 0)
+							bd.SetPixel(x, y, Color.FromPremultipliedArgb(r, g, b, a));
 					}
 			}
 			return bmp;

@@ -1,16 +1,12 @@
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.GtkSharp.Drawing;
-using System;
-
 namespace Eto.GtkSharp.Forms.Controls
 {
-	public class DocumentPageHandler : GtkPanel<Gtk.VBox, DocumentPage, DocumentPage.ICallback>, DocumentPage.IHandler
+	public class DocumentPageHandler : GtkPanel<Gtk.Box, DocumentPage, DocumentPage.ICallback>, DocumentPage.IHandler
 	{
 		Gtk.Label label;
 
 		internal Gtk.Button closeButton;
-		readonly Gtk.HBox tab;
+		readonly Gtk.Box tab;
 		Gtk.Image gtkimage;
 		Image image;
 		public static Size MaxImageSize = new Size(16, 16);
@@ -31,8 +27,8 @@ namespace Eto.GtkSharp.Forms.Controls
 
 		public DocumentPageHandler()
 		{
-			Control = new Gtk.VBox();
-			tab = new Gtk.HBox();
+			Control = new Gtk.Box(Gtk.Orientation.Vertical, 0);
+			tab = new Gtk.Box(Gtk.Orientation.Horizontal, 0);
 			closeButton = new Gtk.Button();
 			closeButton.Relief = Gtk.ReliefStyle.None;
 			closeButton.CanFocus = false;
@@ -92,6 +88,8 @@ namespace Eto.GtkSharp.Forms.Controls
 			get { return closeButton.Visible; }
 			set { closeButton.Visible = value; }
 		}
+
+		public bool HasUnsavedChanges { get; set; }
 
 		public Image Image
 		{

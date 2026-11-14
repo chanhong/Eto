@@ -1,25 +1,11 @@
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.Mac.Drawing;
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#endif
+using Eto.Mac.Forms.Menu;
 
 namespace Eto.Mac.Forms.Controls
 {
 	static class MacControl
 	{
-		internal static readonly object Font_Key = new object();
+		public static readonly object Font_Key = new object();
 	}
 
 	public abstract class MacControl<TControl, TWidget, TCallback> : MacView<TControl, TWidget, TCallback>
@@ -31,9 +17,11 @@ namespace Eto.Mac.Forms.Controls
 
 		protected override bool ControlEnabled
 		{
-			get => Control.Enabled; 
+			get => Control.Enabled;
 			set => Control.Enabled = value;
 		}
+
+		public override NSView MenuControl => Control;
 
 		protected bool HasFont => Widget.Properties.ContainsKey(MacControl.Font_Key);
 
@@ -47,9 +35,13 @@ namespace Eto.Mac.Forms.Controls
 					Control.Font = value.ToNS() ?? NSFont.SystemFontOfSize(NSFont.SystemFontSize);
 					Control.AttributedStringValue = value.AttributedString(Control.AttributedStringValue);
 					InvalidateMeasure();
-				};
+				}
 			}
 		}
+
+		protected override IColorizeCell ColorizeCell => Control.Cell as IColorizeCell;
+
+
 	}
 }
 

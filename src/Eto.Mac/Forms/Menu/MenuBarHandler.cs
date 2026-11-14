@@ -1,25 +1,5 @@
-using Eto.Forms;
-using System.Collections.Generic;
 using Eto.Mac.Forms.Actions;
-using System.Linq;
 using Eto.Mac.Forms;
-using System.Collections.ObjectModel;
-using System;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#endif
-
 namespace Eto.Mac.Forms.Menu
 {
 	public class MenuBarHandler : WidgetHandler<NSMenu, MenuBar>, MenuBar.IHandler
@@ -99,9 +79,9 @@ namespace Eto.Mac.Forms.Menu
 			yield return new Command((sender, e) => NSApplication.SharedApplication.Hide(NSApplication.SharedApplication))
 			{ 
 				ID = "mac_hide", 
-				MenuText = Application.Instance.Localize(Widget, string.Format("Hide {0}", appName)),
+				MenuText = string.Format(Application.Instance.Localize(Widget, "Hide {0}"), appName),
 				ToolBarText = Application.Instance.Localize(Widget, "Hide"),
-				ToolTip = Application.Instance.Localize(Widget, string.Format("Hides the main {0} window", appName)), 
+				ToolTip = string.Format(Application.Instance.Localize(Widget, "Hides the main {0} window"), appName), 
 				Shortcut = Keys.H | Keys.Application
 			};
 

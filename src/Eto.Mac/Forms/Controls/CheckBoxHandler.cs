@@ -1,37 +1,3 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 namespace Eto.Mac.Forms.Controls
 {
 
@@ -59,27 +25,94 @@ namespace Eto.Mac.Forms.Controls
 			}
 		}
 
-		nfloat ButtonOffset => (nfloat)Math.Max(0, Math.Ceiling((AttributedTitle.Size.Height - defaultHeight) / 2 - 1));
+		nfloat GetButtonOffset(CGRect rect)
+		{
+			// tahoe centers the button in ImageRectForBounds instead, see GetCenteringOffset
+			if (MacVersion.IsAtLeast(26, 0))
+				return 0;
+
+			var titleSize = AttributedTitle.Size;
+			// big sur and later calculate the position a wee differently..
+			if (MacVersion.IsAtLeast(10, 16))
+			{
+				if (AttributedTitle.Length > 0)
+					return (nfloat)Math.Ceiling((rect.Height - titleSize.Height) / 2);
+				else
+					return 0;
+			}
+
+			// catalina and older
+			return (nfloat)Math.Max(0, Math.Ceiling((titleSize.Height - defaultHeight) / 2 - 1)) + Offset;
+		}
+		
+
+		/// <summary>
+		/// How far the button has to move to sit in the middle of the text on tahoe, which aligns it
+		/// with the bottom of the text instead and ignores the DrawingRectForBounds shift used on older versions.
+		/// Applies to the compatibility appearance too, which lays the button out the same way.
+		/// </summary>
+		nfloat GetCenteringOffset(CGRect bounds)
+		{
+			if (!MacVersion.IsAtLeast(26, 0) || AttributedTitle.Length == 0)
+				return 0;
+			var imageRect = base.ImageRectForBounds(bounds);
+			var titleRect = base.TitleRectForBounds(bounds);
+			if (imageRect.Height <= 0 || titleRect.Height <= 0)
+				return 0;
+			return (nfloat)Math.Round(titleRect.GetMidY() - imageRect.GetMidY());
+		}
+
+		bool suppressCenteringOffset;
+
+		public override CGRect ImageRectForBounds(CGRect theRect)
+		{
+			var rect = base.ImageRectForBounds(theRect);
+			if (!suppressCenteringOffset)
+				rect.Y += GetCenteringOffset(theRect);
+			return rect;
+		}
+
+		public override void DrawFocusRing(CGRect cellFrame, NSView inView)
+		{
+			var offset = GetCenteringOffset(cellFrame);
+			if (offset == 0)
+			{
+				base.DrawFocusRing(cellFrame, inView);
+				return;
+			}
+
+			// the ring follows ImageRectForBounds in the compatibility appearance but not under glass,
+			// so draw it unshifted either way and move it along with the button ourselves.
+			var context = NSGraphicsContext.CurrentContext;
+			context.SaveGraphicsState();
+			var transform = new NSAffineTransform();
+			transform.Translate(0, offset);
+			transform.Concat();
+			suppressCenteringOffset = true;
+			try
+			{
+				base.DrawFocusRing(cellFrame, inView);
+			}
+			finally
+			{
+				suppressCenteringOffset = false;
+				context.RestoreGraphicsState();
+			}
+		}
 
 		public override CGRect DrawingRectForBounds(CGRect theRect)
 		{
 			var rect = base.DrawingRectForBounds(theRect);
-			if (!MacVersion.IsAtLeast(10, 16)) // big sur
-			{
-				rect.Y += ButtonOffset;
-				rect.Y += Offset;
-			}
+			// adjust drawing offset so the button goes in the right spot
+			rect.Y += GetButtonOffset(theRect);
 			return rect;
 		}
 
 		public override CGRect TitleRectForBounds(CGRect theRect)
 		{
 			var rect = base.TitleRectForBounds(theRect);
-			if (!MacVersion.IsAtLeast(10, 16)) // big sur
-			{
-				rect.Y -= ButtonOffset;
-				rect.Y -= Offset;
-			}
+			// adjust text offset so it goes back to where it should be
+			rect.Y -= GetButtonOffset(theRect);
 			return rect;
 		}
 	}
@@ -103,6 +136,29 @@ namespace Eto.Mac.Forms.Controls
 						return 12;
 					case NSControlSize.Mini:
 						return 10;
+				}
+			}
+
+			public override void DrawWithFrame(CGRect cellFrame, NSView inView)
+			{
+				if (NSGraphicsContext.IsCurrentContextDrawingToScreen)
+				{
+					base.DrawWithFrame(cellFrame, inView);
+				}
+				else
+				{
+					DrawTitle(AttributedTitle, TitleRectForBounds(cellFrame), inView);
+					var state = State;
+					var text = state == NSCellStateValue.On ? "☑" : state == NSCellStateValue.Mixed ? "-" : "☐";
+					var font = NSFont.SystemFontOfSize(NSFont.SystemFontSizeForControlSize(ControlSize));
+					var attributes = NSDictionary.FromObjectAndKey(font, NSStringAttributeKey.Font);
+					var str = new NSAttributedString(text, attributes);
+					var frame = cellFrame;
+					var size = str.Size;
+					var offset = (nfloat)Math.Max(0, (frame.Height - size.Height) / 2);
+					frame.Y += offset;
+					frame.Height -= offset;
+					str.DrawString(frame);
 				}
 			}
 		}
@@ -180,10 +236,5 @@ namespace Eto.Mac.Forms.Controls
 			set { Control.AllowsMixedState = value; }
 		}
 
-		protected override void SetBackgroundColor(Color? color)
-		{
-			base.SetBackgroundColor(color);
-			InvalidateMeasure();
-		}
 	}
 }

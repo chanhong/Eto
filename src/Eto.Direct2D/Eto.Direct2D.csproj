@@ -1,19 +1,12 @@
-﻿<Project>
+﻿<Project Sdk="Microsoft.NET.Sdk">
   
   <PropertyGroup>
-    <HaveWindowsDesktopSdk Condition="$(HaveWindowsDesktopSdk) == '' and $(OS) == 'Windows_NT'">true</HaveWindowsDesktopSdk>
-
-    <TargetFrameworks>netcoreapp3.1;net45</TargetFrameworks>
-  </PropertyGroup>
-
-  <Import Condition="'$(HaveWindowsDesktopSdk)' != 'true'" Sdk="Microsoft.NET.Sdk" Project="Sdk.props" />
-  <Import Condition="'$(HaveWindowsDesktopSdk)' == 'true'" Sdk="Microsoft.NET.Sdk.WindowsDesktop" Project="Sdk.props" />
-
-  <PropertyGroup>
+    <TargetFrameworks Condition="$(TargetFrameworkOverride) == ''">net462;net6.0-windows;net8.0-windows;net10.0-windows</TargetFrameworks>
+    <TargetFrameworks Condition="$(TargetFrameworkOverride) != ''">$(TargetFrameworkOverride)</TargetFrameworks>
     <OutputType>Library</OutputType>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <DefineConstants>$(DefineConstants);WINFORMS</DefineConstants>
-    <UseWindowsForms Condition="$(HaveWindowsDesktopSdk) == 'True'">true</UseWindowsForms>
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
   
   <PropertyGroup>
@@ -33,7 +26,11 @@ You do not need to use any of the classes of this assembly (unless customizing t
     </PackageDescription>
   </PropertyGroup>
   
-  <ItemGroup Condition="$(TargetFramework) == 'net45'">
+  <ItemGroup>
+    <Using Include="System.Windows.Forms" Alias="swf" />
+  </ItemGroup>
+  
+  <ItemGroup Condition="$(TargetFramework) == 'net462'">
     <Reference Include="System" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
@@ -45,7 +42,11 @@ You do not need to use any of the classes of this assembly (unless customizing t
       <Link>Drawing\SplineHelper.cs</Link>
     </Compile>
     <Compile Include="..\Shared\GradientHelper.cs" />
-    <Compile Include="..\Eto.WinForms\Win32.gdi.cs" Link="Win32.gdi.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\Shared\build\*" Exclude="..\Shared\build\Windows.targets" Pack="True" PackagePath="build" Link="build\%(Filename)%(Extension)" />
+    <None Include="..\Shared\build\Windows.targets" Pack="True" PackagePath="build\$(PackageId).targets" Link="build\Windows.targets" />
   </ItemGroup>
   
   <ItemGroup>
@@ -56,10 +57,6 @@ You do not need to use any of the classes of this assembly (unless customizing t
   <ItemGroup>
     <PackageReference Include="SharpDX.Direct2D1" Version="4.2.0" />
     <PackageReference Include="SharpDX.Mathematics" Version="4.2.0" />
-  	<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0" PrivateAssets="all" />
   </ItemGroup>
-  
-  <Import Condition="'$(HaveWindowsDesktopSdk)' != 'true'" Sdk="Microsoft.NET.Sdk" Project="Sdk.targets" />
-  <Import Condition="'$(HaveWindowsDesktopSdk)' == 'true'" Sdk="Microsoft.NET.Sdk.WindowsDesktop" Project="Sdk.targets" />
 
 </Project>

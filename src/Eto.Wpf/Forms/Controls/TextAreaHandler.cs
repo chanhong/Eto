@@ -1,8 +1,3 @@
-using System;
-using swc = System.Windows.Controls;
-using sw = System.Windows;
-using Eto.Forms;
-using Eto.Drawing;
 
 namespace Eto.Wpf.Forms.Controls
 {
@@ -10,14 +5,55 @@ namespace Eto.Wpf.Forms.Controls
 	{
 		public IWpfFrameworkElement Handler { get; set; }
 
+		// the width the text was last laid out (wrapped) at
+		double _formattedWidth = double.NaN;
+
 		protected override sw.Size MeasureOverride(sw.Size constraint)
 		{
-			return Handler?.MeasureOverride(constraint, base.MeasureOverride) ?? base.MeasureOverride(constraint);
+			var size = Handler?.MeasureOverride(constraint, base.MeasureOverride) ?? base.MeasureOverride(constraint);
+
+			// The handler constrains the measure to the preferred width so the text box doesn't grow to
+			// its content (or the monitor work-area in an auto-sized window). A WPF TextBox wraps its text
+			// at the width it is measured at, so that would leave the text wrapped at the narrow preferred
+			// width instead of the width the control is actually displayed at. Re-lay out the text at the
+			// real displayed width (the last arranged width) so it wraps to fill the control. ArrangeOverride
+			// invalidates the measure when that width changes so this converges.
+			// Measure at the real displayed height as well (not infinity): measuring at infinite height makes
+			// the internal ScrollViewer report its viewport as the full content height, so it thinks nothing
+			// needs scrolling and vertical scrolling stops working.
+			// Never measure the template taller than the space being offered. ActualHeight is the height from
+			// the *previous* layout, so while the control is shrinking it is too large, and the template - the
+			// inner ScrollViewer and its ScrollContentPresenter - keeps the old, larger size. WPF arranges those
+			// at that unclipped desired size, so the text spills out below the control, and the ScrollViewer's
+			// ViewportHeight stays too large so ScrollToEnd() stops short of the end and leaves the last line
+			// hanging outside. Growing needs no such handling: arranging the template larger than it measured
+			// updates the scroll info by itself.
+			if (TextWrapping == sw.TextWrapping.Wrap && ActualWidth > 0)
+			{
+				var height = ActualHeight;
+				if (!double.IsPositiveInfinity(constraint.Height) && constraint.Height < height)
+					height = constraint.Height;
+				base.MeasureOverride(new sw.Size(ActualWidth, height));
+				_formattedWidth = ActualWidth;
+			}
+			return size;
+		}
+
+		protected override sw.Size ArrangeOverride(sw.Size arrangeBounds)
+		{
+			var result = base.ArrangeOverride(arrangeBounds);
+
+			// If the displayed width changed (or the text hasn't been laid out to a width yet), it needs
+			// to be re-wrapped to the new width (see MeasureOverride). The negated compare also handles
+			// the initial NaN case, where a direct `> 0.5` compare would be false.
+			if (TextWrapping == sw.TextWrapping.Wrap && !(Math.Abs(_formattedWidth - arrangeBounds.Width) <= 0.5))
+				InvalidateMeasure();
+			return result;
 		}
 	}
 
 	public class TextAreaHandler : TextAreaHandler<EtoTextBox, TextArea, TextArea.ICallback>
-	{
+	{		
 		public override string Text
 		{
 			get { return Control.Text; }
@@ -84,6 +120,15 @@ namespace Eto.Wpf.Forms.Controls
 					break;
 			}
 		}
+
+		public override void ScrollTo(Range<int> range)
+		{
+			var rect = Control.GetRectFromCharacterIndex(range.End);
+			Control.ScrollToVerticalOffset(rect.Top);
+			Control.ScrollToHorizontalOffset(rect.Left);
+		}
+
+		public override int TextLength => Control.Text.Length;
 	}
 
 	public abstract class TextAreaHandler<TControl, TWidget, TCallback> : WpfControl<TControl, TWidget, TCallback>, TextArea.IHandler
@@ -96,6 +141,8 @@ namespace Eto.Wpf.Forms.Controls
 		protected override sw.Size DefaultSize => new sw.Size(100, 60);
 
 		protected override bool PreventUserResize { get { return true; } }
+		
+		protected override bool ContainsScrollViewer => true;		
 
 		public TextAreaHandler()
 		{
@@ -108,6 +155,12 @@ namespace Eto.Wpf.Forms.Controls
 				Handler = this
 			};
 			Wrap = true;
+		}
+
+		protected override void Initialize()
+		{
+			base.Initialize();
+			UserPreferredSize = DefaultSize; // otherwise it grows to the constraint, which we don't want.
 		}
 
 		public override sw.Size MeasureOverride(sw.Size constraint, Func<sw.Size, sw.Size> measure)
@@ -174,10 +227,7 @@ namespace Eto.Wpf.Forms.Controls
 
 		public abstract int CaretIndex { get; set; }
 
-		public void SelectAll()
-		{
-			Control.SelectAll();
-		}
+		public void SelectAll() => Control.SelectAll();
 
 		static readonly object AcceptsTabKey = new object();
 
@@ -236,13 +286,68 @@ namespace Eto.Wpf.Forms.Controls
 
 		public TextReplacements TextReplacements
 		{
-			get { return TextReplacements.None; }
+			get => TextReplacements.None;
 			set { }
 		}
 
-		public TextReplacements SupportedTextReplacements
+		public TextReplacements SupportedTextReplacements => TextReplacements.None;
+
+		static readonly object Border_Key = new object();
+
+		public virtual BorderType Border
 		{
-			get { return TextReplacements.None; }
+			get { return Widget.Properties.Get(Border_Key, BorderType.Bezel); }
+			set { Widget.Properties.Set(Border_Key, value, () => Control.SetEtoBorderType(value)); }
 		}
+
+		public abstract void ScrollTo(Range<int> range);
+
+		double GetScrollX() => Control.FlowDirection switch
+		{
+			sw.FlowDirection.RightToLeft => Control.HorizontalContentAlignment switch
+			{
+				sw.HorizontalAlignment.Right => 0,
+				sw.HorizontalAlignment.Center => (Control.ExtentWidth - Control.ViewportWidth) / 2,
+				_ => Control.ExtentWidth,
+			},
+			_ => Control.HorizontalContentAlignment switch
+			{
+				sw.HorizontalAlignment.Right => Control.ExtentWidth,
+				sw.HorizontalAlignment.Center => (Control.ExtentWidth - Control.ViewportWidth) / 2,
+				_ => 0,
+			},
+		};
+
+		public virtual void ScrollToEnd()
+		{
+			Control.UpdateLayout(); // ensure layout and extents are calculated
+			Control.ScrollToVerticalOffset(Control.ExtentHeight);
+			Control.ScrollToHorizontalOffset(GetScrollX());
+		}
+
+		public virtual void ScrollToStart()
+		{
+			Control.ScrollToVerticalOffset(0);
+			Control.ScrollToHorizontalOffset(GetScrollX());
+		}
+
+		public abstract int TextLength { get; }
+
+
+		protected override swc.ContextMenu GetDefaultContextMenu() => CreateDefaultContextMenu();
+		
+		internal static swc.ContextMenu CreateDefaultContextMenu()
+		{
+			var menu = new swc.ContextMenu();
+
+			// Cut / Copy / Paste
+			menu.Items.Add(new swc.MenuItem { Command = swi.ApplicationCommands.Cut });
+			menu.Items.Add(new swc.MenuItem { Command = swi.ApplicationCommands.Copy });
+			menu.Items.Add(new swc.MenuItem { Command = swi.ApplicationCommands.Paste });
+
+			return menu;
+		}
+
+
 	}
 }

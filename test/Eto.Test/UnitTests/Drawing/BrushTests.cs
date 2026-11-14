@@ -1,11 +1,4 @@
-﻿using Eto.Drawing;
-using NUnit.Framework;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
+﻿using NUnit.Framework;
 namespace Eto.Test.UnitTests.Drawing
 {
 	[TestFixture]
@@ -54,10 +47,26 @@ namespace Eto.Test.UnitTests.Drawing
 			});
 		}
 
+		[TestCase(1f)]
+		[TestCase(0.5f)]
+		[TestCase(0f)]
+		public void TextureBrushShouldKeepOpacityFromConstructor(float opacity)
+		{
+			var brush = new TextureBrush(TestIcons.Logo, opacity);
+			Assert.That(brush.Opacity, Is.EqualTo(opacity));
+		}
+
+		[Test]
+		public void TextureBrushShouldDefaultToOpaque()
+		{
+			var brush = new TextureBrush(TestIcons.Logo);
+			Assert.That(brush.Opacity, Is.EqualTo(1f));
+		}
+
 		[Test]
 		public void LinearGradientBrushShouldFillWithRectangleAndAngle()
 		{
-			var bmp = new Bitmap(30, 30, PixelFormat.Format32bppRgba);
+			var bmp = new Bitmap(100, 100, PixelFormat.Format32bppRgba);
 			using (var g = new Graphics(bmp))
 			{
 				var brush = new LinearGradientBrush(
@@ -73,15 +82,15 @@ namespace Eto.Test.UnitTests.Drawing
 
 			// start out mostly blue
 			var startPixel = bmp.GetPixel(1, 2);
-			Assert.LessOrEqual(startPixel.Rb, 10, "#1.1");
-			Assert.LessOrEqual(startPixel.Gb, 10, "#1.2");
-			Assert.GreaterOrEqual(startPixel.Bb, 10, "#1.3");
+			Assert.That(startPixel.Rb, Is.LessThanOrEqualTo(10), "#1.1");
+			Assert.That(startPixel.Gb, Is.LessThanOrEqualTo(10), "#1.2");
+			Assert.That(startPixel.Bb, Is.GreaterThanOrEqualTo(10), "#1.3");
 
 			// end mostly green
 			var endPixel = bmp.GetPixel(98, 99);
-			Assert.LessOrEqual(endPixel.Rb, 10, "#2.1");
-			Assert.GreaterOrEqual(endPixel.Gb, 80, "#2.2");
-			Assert.LessOrEqual(endPixel.Bb, 10, "#2.3");
+			Assert.That(endPixel.Rb, Is.LessThanOrEqualTo(10), "#2.1");
+			Assert.That(endPixel.Gb, Is.GreaterThanOrEqualTo(80), "#2.2");
+			Assert.That(endPixel.Bb, Is.LessThanOrEqualTo(10), "#2.3");
 		}
 
 	}

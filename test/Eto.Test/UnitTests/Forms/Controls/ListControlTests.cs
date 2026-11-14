@@ -1,6 +1,3 @@
-using System;
-using Eto.Drawing;
-using Eto.Forms;
 using NUnit.Framework;
 
 namespace Eto.Test.UnitTests.Forms.Controls
@@ -67,10 +64,53 @@ namespace Eto.Test.UnitTests.Forms.Controls
 					{
 						list.DataStore = null;
 						list.Invalidate();
-						new UITimer((sender2, e2) => { form.Close(); }) { Interval = 1 }.Start();
+						// Interval is in seconds - one full second here just to let the invalidate repaint
+						// is far more than needed, and this test has a case per list control type.
+						new UITimer((sender2, e2) => { form.Close(); }) { Interval = 0.05 }.Start();
 					});
 				};
 			});
 		}
+		
+		[Test, InvokeOnUI]
+		public void ChangingSelectedIndexMultipleTimesBeforeLoadShouldTriggerChanged()
+		{
+			var list = new T();
+			int changed = 0;
+			list.SelectedIndexChanged += (sender, e) => changed++;
+			list.DataStore = new [] { "Item 1", "Item 2", "Item 3" };
+			
+			Assert.That(changed, Is.EqualTo(0), "1.1 - Setting data store should not fire selected index");
+			Assert.That(list.SelectedIndex, Is.EqualTo(-1), "1.2");
+			
+			list.SelectedIndex = 0;
+			Assert.That(changed, Is.EqualTo(1), "2.1 - Setting selected index should trigger event");
+			Assert.That(list.SelectedIndex, Is.EqualTo(0), "2.2");
+			
+			list.SelectedIndex = 1;
+			Assert.That(changed, Is.EqualTo(2), "3.1 - Setting selected index again should trigger event again");
+			Assert.That(list.SelectedIndex, Is.EqualTo(1), "3.2");
+		}
+		
+		[Test, ManualTest]
+		public void ColorsShouldBeSet()
+		{
+			ManualForm("Control should have blue background with yellow text", form =>
+			{
+				return new TableLayout
+				{
+					Rows = {
+						new TableRow(new T { 
+							BackgroundColor = Colors.Blue, 
+							TextColor = Colors.Yellow,
+							DataStore = new[] { "Item 1", "Item 2", "Item 3" },
+							SelectedIndex = 0 
+						}, null),
+						null
+					}
+				};
+			});
+		}
+		
 	}
 }

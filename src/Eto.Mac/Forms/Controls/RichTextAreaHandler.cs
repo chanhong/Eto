@@ -1,49 +1,4 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.Mac.Drawing;
-using System.IO;
-using System.Collections.Generic;
-using System.Text;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
-#if XAMMAC
-using nnint = System.Int32;
-#elif Mac64
-using nnint = System.UInt64;
-#else
-using nnint = System.UInt32;
-#endif
-
 namespace Eto.Mac.Forms.Controls
 {
 	public class RichTextAreaHandler : TextAreaHandler<RichTextArea, RichTextArea.ICallback>, RichTextArea.IHandler, ITextBuffer
@@ -171,20 +126,26 @@ namespace Eto.Mac.Forms.Controls
 			if (Control.ShouldChangeTextNew(range, null))
 			{
 				Control.TextStorage.BeginEditing();
-				var current = range;
-				var left = current.Length;
-				while (left > 0)
+				try
 				{
-					var attribs = Control.TextStorage.GetAttributes(current.Location, out effectiveRange, current);
-					attribs = UpdateFontAttributes(attribs, enabled, updateFont);
-					var span = effectiveRange.Location + effectiveRange.Length - current.Location;
-					var newRange = new NSRange(current.Location, (nint)Math.Min(span, current.Length));
-					Control.TextStorage.AddAttributes(attribs, newRange);
-					current.Location += span;
-					current.Length -= span;
-					left -= span;
+					var current = range;
+					var left = current.Length;
+					while (left > 0)
+					{
+						var attribs = Control.TextStorage.GetAttributes(current.Location, out effectiveRange, current);
+						attribs = UpdateFontAttributes(attribs, enabled, updateFont);
+						var span = effectiveRange.Location + effectiveRange.Length - current.Location;
+						var newRange = new NSRange(current.Location, (nint)Math.Min(span, current.Length));
+						Control.TextStorage.AddAttributes(attribs, newRange);
+						current.Location += span;
+						current.Length -= span;
+						left -= span;
+					}
 				}
-				Control.TextStorage.EndEditing();
+				finally
+				{
+					Control.TextStorage.EndEditing();
+				}
 				Control.DidChangeText();
 			}
 		}
@@ -220,13 +181,13 @@ namespace Eto.Mac.Forms.Controls
 
 		public Color SelectionForeground
 		{
-			get { return GetSelectedTextAttribute<NSColor>(NSStringAttributeKey.ForegroundColor).ToEto(false); }
+			get { return GetSelectedTextAttribute<NSColor>(NSStringAttributeKey.ForegroundColor).ToEto(); }
 			set { SetSelectedAttribute(NSStringAttributeKey.ForegroundColor, value.ToNSUI()); }
 		}
 
 		public Color SelectionBackground
 		{
-			get { return GetSelectedTextAttribute<NSColor>(NSStringAttributeKey.BackgroundColor).ToEto(false); }
+			get { return GetSelectedTextAttribute<NSColor>(NSStringAttributeKey.BackgroundColor).ToEto(); }
 			set { SetSelectedAttribute(NSStringAttributeKey.BackgroundColor, value.ToNSUI()); }
 		}
 
@@ -298,7 +259,7 @@ namespace Eto.Mac.Forms.Controls
 
 		public void Insert(int position, string text)
 		{
-			Control.TextStorage.Insert(new NSAttributedString(text), (nnint)position);
+			Control.TextStorage.Insert(new NSAttributedString(text), (nint)position);
 		}
 
 		public IEnumerable<RichTextAreaFormat> SupportedFormats

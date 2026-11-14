@@ -1,34 +1,3 @@
-using System;
-using Eto.Drawing;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#elif OSX
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 #if OSX
 using Eto.Mac.Drawing;
 
@@ -43,27 +12,28 @@ namespace Eto.iOS
 {
 	public static partial class CGConversions
 	{
-		static CGColorSpace deviceRGB;
+		static CGColorSpace colorSpace;
 
-		static CGColorSpace CreateDeviceRGB()
-		{
-			if (deviceRGB != null)
-				return deviceRGB;
-
-			deviceRGB = CGColorSpace.CreateDeviceRGB();
-			return deviceRGB;
-		}
+		static CGColorSpace CreateColorSpace() => colorSpace ??= CGColorSpace.CreateSrgb();
 
 		public static CGColor ToCG(this NSColor color)
 		{
 			if (color == null)
 				return null;
-			if (MacVersion.IsAtLeast(10, 8))
-				return color.CGColor;
+			CGColor cgColor;
+			
+			// try getting the CGColor and ensure it isn't null..
+			if (MacVersion.IsAtLeast(10, 8) && (cgColor = color.CGColor) != null)
+				return cgColor;
 
-			var converted = color.UsingColorSpaceFast(NSColorSpace.DeviceRGB);
+			// try to convert to RGB colorspace so we can convert it to CGColor
+			var converted = color.UsingColorSpace(NSColorSpace.SRGBColorSpace);
 			if (converted == null)
 				return new CGColor(0, 0, 0, 1f);
+
+			// try getting the CGColor again..
+			if (MacVersion.IsAtLeast(10, 8) && (cgColor = converted.CGColor) != null)
+				return cgColor;
 
 			converted.GetComponents(out var components);
 			return new CGColor(converted.ColorSpace.ColorSpace, components);
@@ -75,7 +45,7 @@ namespace Eto.iOS
 				return nscolor.ToCG();
 			if (color.ControlObject is CGColor cgcolor)
 				return cgcolor;
-			return new CGColor(CreateDeviceRGB(), new nfloat[] { color.R, color.G, color.B, color.A });
+			return new CGColor(CreateColorSpace(), new nfloat[] { color.R, color.G, color.B, color.A });
 		}
 
 		public static Color ToEto(this CGColor color)

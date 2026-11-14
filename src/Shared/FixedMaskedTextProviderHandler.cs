@@ -1,10 +1,4 @@
-﻿using System;
-using Eto.Forms;
-using System.ComponentModel;
-using System.Globalization;
-using System.Linq;
-
-namespace Eto.Shared.Forms
+﻿namespace Eto.Shared.Forms
 {
 	public class FixedMaskedTextProviderHandler : FixedMaskedTextProvider.IHandler
 	{
@@ -12,6 +6,8 @@ namespace Eto.Shared.Forms
 
 		public void Create(string mask, CultureInfo culture, bool allowPromptAsInput, bool restrictToAscii)
 		{
+			// MaskedTextProvider rejects a mask containing any whitespace other than a regular space, so the mask
+			// is already run through FixedMaskedTextProvider.NormalizeWhitespace() before it gets here.
 			Provider = new MaskedTextProvider(mask, culture, allowPromptAsInput, '_', (char)0, restrictToAscii);
 		}
 
@@ -202,6 +198,10 @@ namespace Eto.Shared.Forms
 		public bool MaskFull
 		{
 			get { return Provider.MaskFull; }
+		}
+		
+		public virtual void CommitText()
+		{
 		}
 	}
 }

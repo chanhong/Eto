@@ -1,19 +1,8 @@
-using System;
-using System.Linq;
-using Eto.Drawing;
-using Eto.Forms;
-using swi = System.Windows.Input;
-using swm = System.Windows.Media;
-using sw = System.Windows;
 using sp = System.Printing;
-using swc = System.Windows.Controls;
-using swmi = System.Windows.Media.Imaging;
 using swd = System.Windows.Documents;
-using xwt = Xceed.Wpf.Toolkit;
 using Eto.Wpf.Drawing;
+using Eto.Wpf.Forms.Controls;
 using System.Windows.Interop;
-using System.IO;
-
 namespace Eto.Wpf
 {
 	public static class WpfConversions
@@ -31,11 +20,7 @@ namespace Eto.Wpf
 
 		public static swm.Brush ToWpfBrush(this Color value, swm.Brush brush = null)
 		{
-			var solidBrush = brush as swm.SolidColorBrush;
-			if (solidBrush == null || solidBrush.IsSealed)
-			{
-				solidBrush = new swm.SolidColorBrush();
-			}
+			var solidBrush = new swm.SolidColorBrush();
 			solidBrush.Color = value.ToWpf();
 			return solidBrush;
 		}
@@ -521,6 +506,7 @@ namespace Eto.Wpf
 				case sw.WindowStyle.None:
 					return WindowStyle.None;
 				case sw.WindowStyle.ThreeDBorderWindow:
+				case sw.WindowStyle.SingleBorderWindow:
 					return WindowStyle.Default;
 				case sw.WindowStyle.ToolWindow:
 					return WindowStyle.Utility;
@@ -789,23 +775,23 @@ namespace Eto.Wpf
 			}
 		}
 
-		public static StepperValidDirections ToEto(this xwt.ValidSpinDirections direction)
+		public static StepperValidDirections ToEto(this ValidSpinDirections direction)
 		{
 			var dir = StepperValidDirections.None;
-			if (direction.HasFlag(xwt.ValidSpinDirections.Increase))
+			if (direction.HasFlag(ValidSpinDirections.Increase))
 				dir |= StepperValidDirections.Up;
-			if (direction.HasFlag(xwt.ValidSpinDirections.Decrease))
+			if (direction.HasFlag(ValidSpinDirections.Decrease))
 				dir |= StepperValidDirections.Down;
 			return dir;
 		}
 
-		public static xwt.ValidSpinDirections ToWpf(this StepperValidDirections direction)
+		public static ValidSpinDirections ToWpf(this StepperValidDirections direction)
 		{
-			var dir = xwt.ValidSpinDirections.None;
+			var dir = ValidSpinDirections.None;
 			if (direction.HasFlag(StepperValidDirections.Up))
-				dir |= xwt.ValidSpinDirections.Increase;
+				dir |= ValidSpinDirections.Increase;
 			if (direction.HasFlag(StepperValidDirections.Down))
-				dir |= xwt.ValidSpinDirections.Decrease;
+				dir |= ValidSpinDirections.Decrease;
 			return dir;
 		}
 
@@ -814,7 +800,10 @@ namespace Eto.Wpf
 			switch (value)
 			{
 				case BorderType.Bezel:
-					control.BorderBrush = getBezelBrush?.Invoke() ?? sw.SystemColors.ControlDarkBrush;
+					if (getBezelBrush != null)
+						control.BorderBrush = getBezelBrush();
+					else
+						control.SetResourceReference(swc.Border.BorderBrushProperty, "EtoBorderBezelBrush");
 					control.BorderThickness = new sw.Thickness(1);
 					break;
 				case BorderType.Line:
@@ -836,7 +825,10 @@ namespace Eto.Wpf
 			switch (value)
 			{
 				case BorderType.Bezel:
-					control.BorderBrush = getBezelBrush?.Invoke() ?? sw.SystemColors.ControlDarkBrush;
+					if (getBezelBrush != null)
+						control.BorderBrush = getBezelBrush();
+					else
+						control.SetResourceReference(swc.Control.BorderBrushProperty, "EtoBorderBezelBrush");
 					control.BorderThickness = new sw.Thickness(1);
 					break;
 				case BorderType.Line:
@@ -853,13 +845,9 @@ namespace Eto.Wpf
 			}
 		}
 
-		public static Image ToEto(this System.Drawing.Icon icon)
+		public static Icon ToEto(this System.Drawing.Icon icon)
 		{
-			var imageSource = Imaging.CreateBitmapSourceFromHIcon(
-						icon.Handle,
-						sw.Int32Rect.Empty,
-						swmi.BitmapSizeOptions.FromEmptyOptions());
-			return imageSource.ToEto();
+			return new Icon(new IconHandler(icon));
 		}
 
 		public static Icon ToEtoIcon(this swm.ImageSource bitmap)
@@ -922,11 +910,136 @@ namespace Eto.Wpf
 
 		public static bool HasAlpha(this swm.PixelFormat format)
 		{
-			return format == swm.PixelFormats.Pbgra32
+			return format == swm.PixelFormats.Bgra32
+				|| format == swm.PixelFormats.Pbgra32
 				|| format == swm.PixelFormats.Prgba128Float
 				|| format == swm.PixelFormats.Prgba64
 				|| format == swm.PixelFormats.Rgba64
-				|| format == swm.PixelFormats.Rgba64;
+				|| format == swm.PixelFormats.Rgba128Float;
+		}
+		public static bool IsPremultiplied(this swm.PixelFormat format)
+		{
+			return format == swm.PixelFormats.Pbgra32
+				|| format == swm.PixelFormats.Prgba128Float
+				|| format == swm.PixelFormats.Prgba64;
+		}
+		public static swm.PixelFormat GetNonPremultipliedFormat(this swm.PixelFormat format)
+		{
+			if (format == swm.PixelFormats.Pbgra32)
+				return swm.PixelFormats.Bgra32;
+			if (format == swm.PixelFormats.Prgba128Float)
+				return swm.PixelFormats.Rgba128Float;
+			if (format == swm.PixelFormats.Prgba64)
+				return swm.PixelFormats.Rgba64;
+			return format;
+		}
+
+		public static Color? GetResourceColor(this sw.FrameworkElement cell, object key)
+		{
+			var res = cell.TryFindResource(key);
+			if (res is swm.SolidColorBrush brush)
+				return brush.ToEtoColor();
+			if (res is swm.Color color)
+				return color.ToEto();
+			return null;
+		}
+
+		public static Color? GetResourceColor(this sw.FrameworkElement cell, params object[] keys)
+		{
+			for (int i = 0; i < keys.Length; i++)
+			{
+				object key = keys[i];
+				var value = GetResourceColor(cell, key);
+				if (value != null)
+					return value;
+			}
+			return null;
+		}
+
+		static swc.TextBlock UnderlineCharacter(string text, int indexToUnderline)
+		{
+			var textBlock = new swc.TextBlock();
+
+			if (indexToUnderline > 0)
+			{
+				textBlock.Inlines.Add(new swd.Run(text.Substring(0, indexToUnderline)));
+			}
+
+			if (indexToUnderline >= 0 && indexToUnderline < text.Length)
+			{
+				var underline = new swd.Underline(new swd.Run(text[indexToUnderline].ToString()));
+				textBlock.Inlines.Add(underline);
+			}
+
+			if (indexToUnderline + 1 < text.Length)
+			{
+				textBlock.Inlines.Add(new swd.Run(text.Substring(indexToUnderline + 1)));
+			}
+
+			return textBlock;
+		}
+		
+		public static sw.TextWrapping ToWpf(this WrapMode value)
+		{
+			switch (value)
+			{
+				case WrapMode.Word:
+					return sw.TextWrapping.WrapWithOverflow;
+				case WrapMode.Character:
+					return sw.TextWrapping.Wrap;
+				case WrapMode.None:
+					return sw.TextWrapping.NoWrap;
+				default:
+					throw new NotSupportedException();
+			}
+		}
+
+
+		public static WrapMode ToEto(this sw.TextWrapping wrapping)
+		{
+			switch (wrapping)
+			{
+				case sw.TextWrapping.NoWrap:
+					return WrapMode.None;
+				case sw.TextWrapping.Wrap:
+					return WrapMode.Character;
+				case sw.TextWrapping.WrapWithOverflow:
+					return WrapMode.Word;
+				default:
+					throw new NotSupportedException();
+			}
+		}
+
+		public static sw.TextTrimming ToWpf(this TextTrimming value)
+		{
+			switch (value)
+			{
+				case TextTrimming.None:
+					return sw.TextTrimming.None;
+				case TextTrimming.CharacterEllipsis:
+					return sw.TextTrimming.CharacterEllipsis;
+				case TextTrimming.WordEllipsis:
+					return sw.TextTrimming.WordEllipsis;
+				default:
+					throw new NotSupportedException();
+			}
+		}
+
+		public static TextTrimming ToEto(this sw.TextTrimming trimming)
+		{
+			switch (trimming)
+			{
+				case sw.TextTrimming.None:
+					return TextTrimming.None;
+				case sw.TextTrimming.CharacterEllipsis:
+					return TextTrimming.CharacterEllipsis;
+				case sw.TextTrimming.WordEllipsis:
+					return TextTrimming.WordEllipsis;
+				default:
+					throw new NotSupportedException();
+			}
 		}
 	}
 }
+
+

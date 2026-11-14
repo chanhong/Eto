@@ -1,39 +1,3 @@
-using System;
-using Eto.Drawing;
-using System.Runtime.InteropServices;
-#if IOS
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#elif XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#elif OSX
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 #if IOS
 namespace Eto.iOS
 #else
@@ -70,7 +34,9 @@ namespace Eto.Mac
 
 		public static Point ToEtoPoint(this CGPoint point)
 		{
-			return new Point((int)point.X, (int)point.Y);
+			return new Point(
+				point.X <= int.MinValue ? int.MinValue : point.X >= int.MaxValue ? int.MaxValue : (int)point.X,
+				point.Y <= int.MinValue ? int.MinValue : point.Y >= int.MaxValue ? int.MaxValue : (int)point.Y);
 		}
 
 		public static CGPoint ToNS(this PointF point)
@@ -90,12 +56,12 @@ namespace Eto.Mac
 
 		public static CGSize ToNS(this Size size)
 		{
-			return new CGSize((float)size.Width, (float)size.Height);
+			return new CGSize(size.Width, size.Height);
 		}
 
 		public static Size ToEtoSize(this CGSize size)
 		{
-			return new Size((int)size.Width, (int)size.Height);
+			return new Size(size.Width >= int.MaxValue ? int.MaxValue : (int)size.Width, size.Height >= int.MaxValue ? int.MaxValue : (int)size.Height);
 		}
 
 		public static CGRect ToNS(this RectangleF rect)
@@ -115,7 +81,12 @@ namespace Eto.Mac
 
 		public static Rectangle ToEtoRectangle(this CGRect rect)
 		{
-			return new Rectangle((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height);
+			return new Rectangle(
+				rect.X <= int.MinValue ? int.MinValue : rect.X >= int.MaxValue ? int.MaxValue : (int)rect.X,
+				rect.Y <= int.MinValue ? int.MinValue : rect.Y >= int.MaxValue ? int.MaxValue : (int)rect.Y,
+				rect.Width >= int.MaxValue ? int.MaxValue : (int)rect.Width,
+				rect.Height >= int.MaxValue ? int.MaxValue : (int)rect.Height
+			);
 		}
 
 		#if IOS

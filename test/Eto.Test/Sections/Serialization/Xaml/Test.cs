@@ -1,8 +1,4 @@
-using System;
-using Eto.Forms;
 using Eto.Serialization.Xaml;
-using System.Windows.Input;
-using System.Diagnostics;
 using System.Collections.Generic;
 
 
@@ -24,7 +20,8 @@ namespace Eto.Test.Sections.Serialization.Xaml
 		}
 	}
 
-	public class Test : Panel
+	[HotReload(nameof(InitializeComponent))]
+	public partial class Test : Panel
 	{
 		public class MyModel
 		{
@@ -57,24 +54,32 @@ namespace Eto.Test.Sections.Serialization.Xaml
 
 		public Test()
 		{
+			InitializeComponent();
+
+			DataContext = new MyModel { SomeText = "Text from data model" };
+		}
+
+		void InitializeComponent()
+		{
+			// only time the load, same as the Json section
 			var sw = new Stopwatch();
 			sw.Start();
 
 			XamlReader.Load(this);
+
+			sw.Stop();
+			Log.Write(this, "loaded in {0} seconds", sw.Elapsed.TotalSeconds);
 
 			var items = new List<MyItem>();
 			items.Add(new MyItem { MyText = "My Item 1" });
 			items.Add(new MyItem { MyText = "My Item 2" });
 			items.Add(new MyItem { MyText = "My Item 3" });
 			MyDropDown.DataStore = items;
-			sw.Stop();
-			Log.Write(this, "loaded in {0} seconds", sw.Elapsed.TotalSeconds);
 
 			MyCheckBox.Checked = true;
 			MyTextArea.Text = "This form was created via xaml!";
-
-			DataContext = new MyModel { SomeText = "Text from data model" };
 		}
+
 
 		protected void HandleButtonClick(object sender, EventArgs e)
 		{

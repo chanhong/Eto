@@ -1,7 +1,4 @@
-﻿using System;
-using Eto.Forms;
-
-namespace Eto.GtkSharp.Forms.Cells
+﻿namespace Eto.GtkSharp.Forms.Cells
 {
 	public class ProgressCellHandler : SingleCellHandler<Gtk.CellRendererProgress, ProgressCell, ProgressCell.ICallback>, ProgressCell.IHandler
 	{
@@ -21,10 +18,21 @@ namespace Eto.GtkSharp.Forms.Cells
 				get { return row; }
 				set {
 					row = value;
-					if (Handler.FormattingEnabled)
-						Handler.Format(new GtkGridCellFormatEventArgs<Renderer>(this, Handler.Column.Widget, Handler.Source.GetItem(Row), Row));
 				}
 			}
+
+			object item;
+			[GLib.Property("item")]
+			public object Item
+			{
+				get { return item; }
+				set
+				{
+					item = value;
+					Handler.Format(this, item, Row);
+				}
+			}
+			
 
 			#if GTK2
 			public override void GetSize(Gtk.Widget widget, ref Gdk.Rectangle cell_area, out int x_offset, out int y_offset, out int width, out int height)
@@ -69,9 +77,9 @@ namespace Eto.GtkSharp.Forms.Cells
 		protected override void BindCell(ref int dataIndex)
 		{
 			Column.Control.ClearAttributes(Control);
-			valueCol = SetColumnMap(dataIndex);
+			valueCol = SetColumnMap(dataIndex, GLib.GType.Int);
 			Column.Control.AddAttribute(Control, "value", dataIndex++);
-			SetColumnMap(dataIndex);
+			SetColumnMap(dataIndex, GLib.GType.Boolean);
 			Column.Control.AddAttribute(Control, "hasValue", dataIndex++);
 			base.BindCell(ref dataIndex);
 		}

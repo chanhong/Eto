@@ -1,40 +1,3 @@
-using System;
-using Eto.Forms;
-using System.Linq;
-using System.Collections.Generic;
-using System.Collections;
-using Eto.Drawing;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-using CoreImage;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-using MonoMac.CoreImage;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 namespace Eto.Mac.Forms.Controls
 {
 	public class DropDownHandler : MacControl<NSPopUpButton, DropDown, DropDown.ICallback>, DropDown.IHandler
@@ -67,7 +30,7 @@ namespace Eto.Mac.Forms.Controls
 
 		CollectionHandler collection;
 
-		public class EtoPopUpButtonCell : NSPopUpButtonCell
+		public class EtoPopUpButtonCell : NSPopUpButtonCell, IColorizeCell
 		{
 			NSDictionary textAttributes;
 			Color? textColor;
@@ -90,26 +53,38 @@ namespace Eto.Mac.Forms.Controls
 
 			public override void DrawBezelWithFrame(CGRect frame, NSView controlView)
 			{
-				colorize?.Begin(frame, controlView);
-				base.DrawBezelWithFrame(frame, controlView);
-				colorize?.End();
+				if (NSGraphicsContext.IsCurrentContextDrawingToScreen)
+				{
+					colorize?.Begin(frame, controlView);
+					base.DrawBezelWithFrame(frame, controlView);
+					colorize?.End();
+				}
 			}
 
-			public override CGRect DrawTitle(NSAttributedString title, CGRect frame, NSView controlView)
+			public override NSAttributedString AttributedTitle
 			{
-				var str = new NSMutableAttributedString(title);
-				var range = new NSRange(0, str.Length);
-				if (textAttributes != null)
+				get
 				{
-					str.AddAttributes(textAttributes, range);
+					var title = base.AttributedTitle;
+					if (title == null || title.Length == 0)
+						return title;
+					var attribute = title.GetAttribute(NSStringAttributeKey.Font, 0, out var range);
+					if (attribute != null)
+					{
+						// don't include custom fonts for the title (selected item), it does not work great with NSPopUpButton.
+						var str = new NSMutableAttributedString(title);
+						str.RemoveAttribute(NSStringAttributeKey.Font, range);
+						title = str;
+					}
+					if (textAttributes != null)
+					{
+						var str = title as NSMutableAttributedString ?? new NSMutableAttributedString(title);
+						str.AddAttributes(textAttributes, new NSRange(0, str.Length));
+						title = str;
+					}
+					return title;
 				}
-
-				// enforce the control font if it had been overridden for this item, macOS doesn't support non-standard fonts for its NSPopUpButton.
-				if (controlView is NSControl control)
-					str.AddAttribute(NSStringAttributeKey.Font, control.Font, range);
-
-				title = str;
-				return base.DrawTitle(title, frame, controlView);
+				set => base.AttributedTitle = value;
 			}
 		}
 
@@ -151,11 +126,8 @@ namespace Eto.Mac.Forms.Controls
 		{
 			var handler = GetHandler(sender) as DropDownHandler;
 			handler?.Callback.OnSelectedIndexChanged(handler.Widget, EventArgs.Empty);
-
-			
-
 		}
-
+		
 		class CollectionHandler : EnumerableChangedHandler<object>
 		{
 			public DropDownHandler Handler { get; set; }
@@ -201,9 +173,9 @@ namespace Eto.Mac.Forms.Controls
 				var oldIndex = control.IndexOfSelectedItem;
 				NSMenu menu = control.Menu;
 
-				// xamarin.mac 2 goes really slow when adding directly.  See https://github.com/xamarin/xamarin-macios/issues/3488
+				// MacOS goes really slow when adding directly.  See https://github.com/xamarin/xamarin-macios/issues/3488
 				// also, this does improve performance normally, so let's keep the hack
-				// until Xamarin.Mac supports an NSMenu.AddRange() of some sort
+				// until MacOS supports an NSMenu.AddRange() of some sort
 				var itemList = items.ToList();
 				for (int i = 0; i < itemList.Count; i++)
 				{
@@ -275,14 +247,17 @@ namespace Eto.Mac.Forms.Controls
 			set
 			{
 				var selected = Widget.SelectedValue;
+				var selectedIndex = SelectedIndex;
 				Control.SelectItem(-1);
 				collection?.Unregister();
 				collection = new CollectionHandler { Handler = this };
 				collection.Register(value);
 				if (!ReferenceEquals(selected, null))
 				{
-					Control.SelectItem(collection.IndexOf(selected));
-					Callback.OnSelectedIndexChanged(Widget, EventArgs.Empty);
+					var newIndex = collection.IndexOf(selected);
+					Control.SelectItem(newIndex);
+					if (selectedIndex != newIndex)
+						Callback.OnSelectedIndexChanged(Widget, EventArgs.Empty);
 				}
 				InvalidateMeasure();
 			}
@@ -301,19 +276,6 @@ namespace Eto.Mac.Forms.Controls
 			}
 		}
 
-		public override Color BackgroundColor
-		{
-			get { return ((EtoPopUpButtonCell)Control.Cell).Color ?? Colors.Transparent; }
-			set
-			{
-				if (value != BackgroundColor)
-				{
-					((EtoPopUpButtonCell)Control.Cell).Color = value;
-					Control.SetNeedsDisplay();
-				}
-			}
-		}
-
 		public Color TextColor
 		{
 			get { return ((EtoPopUpButtonCell)Control.Cell).TextColor ?? NSColor.ControlText.ToEto(); }
@@ -322,7 +284,7 @@ namespace Eto.Mac.Forms.Controls
 				if (value != TextColor)
 				{
 					((EtoPopUpButtonCell)Control.Cell).TextColor = value;
-					Control.SetNeedsDisplay();
+					Control.NeedsDisplay = true;
 				}
 			}
 		}

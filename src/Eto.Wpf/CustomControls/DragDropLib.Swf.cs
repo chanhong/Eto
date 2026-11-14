@@ -8,17 +8,13 @@
 
 namespace System.Windows.Forms
 {
-	using System;
-	using System.ComponentModel;
 	using System.Drawing;
-	using System.IO;
-	using System.Runtime.InteropServices;
-	using System.Runtime.Serialization;
 	using System.Runtime.Serialization.Formatters.Binary;
 	using DragDropLib;
 	using ComIDataObject = System.Runtime.InteropServices.ComTypes.IDataObject;
 	using ComTypes = System.Runtime.InteropServices.ComTypes;
 
+#if !NET8_0_OR_GREATER
 	public enum DropImageType
 	{
 		Invalid = -1,
@@ -29,6 +25,7 @@ namespace System.Windows.Forms
 		Label = 6,
 		Warning = 7
 	}
+#endif
 
 	/// <summary>
 	/// Provides extended functionality to the System.Windows.Forms.IDataObject interface.
@@ -333,10 +330,7 @@ namespace System.Windows.Forms
 
 namespace DragDropLib
 {
-	using System;
-	using System.Collections.Generic;
 	using System.Drawing;
-	using System.Text;
 
 	static class SwfDragDropLibExtensions
 	{
@@ -361,8 +355,6 @@ namespace DragDropLib
 
 namespace System.Windows.Forms
 {
-	using System;
-	using System.Collections.Generic;
 	using System.Drawing;
 	using System.Windows.Forms;
 	using DragDropLib;
@@ -528,12 +520,8 @@ namespace System.Windows.Forms
 
 namespace System.Windows.Forms
 {
-	using System;
-	using System.Collections.Generic;
 	using System.Drawing;
-	using System.IO;
-	using System.Runtime.InteropServices;
-	using DragDropLib;
+		using DragDropLib;
 	using ComTypes = System.Runtime.InteropServices.ComTypes;
 
 	/// <summary>

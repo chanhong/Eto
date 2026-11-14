@@ -1,11 +1,4 @@
-using swc = System.Windows.Controls;
-using sw = System.Windows;
-using swd = System.Windows.Data;
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.Wpf.Drawing;
-using System;
-using System.Windows;
 
 namespace Eto.Wpf.Forms.Controls
 {
@@ -21,34 +14,23 @@ namespace Eto.Wpf.Forms.Controls
 
 	public class GroupBoxHandler : WpfPanel<swc.GroupBox, GroupBox, GroupBox.ICallback>, GroupBox.IHandler
 	{
-		sw.Thickness? headerPadding;
 		public swc.Label Header { get; set; }
 		swc.AccessText AccessText => (swc.AccessText)Header.Content;
 
 		public GroupBoxHandler()
 		{
 			Control = new EtoGroupBox { Handler = this };
-			Control.Loaded += Control_Loaded;
 			Header = new swc.Label { Content = new swc.AccessText(), Padding = new sw.Thickness(0) };
-			Control.Header = Header;
+			// Only attach the header when there is title text. Leaving Header null
+			// when empty makes GroupBox.HasHeader false, so the template (and the
+			// default WPF GroupBox template used by the other themes) collapses the
+			// header area — keeping the content padding symmetric on all sides.
+			UpdateHeader();
 		}
 
-		private void Control_Loaded(object sender, RoutedEventArgs e)
+		void UpdateHeader()
 		{
-			SetHeaderPadding();
-		}
-
-		protected virtual swc.Border HeaderControl => Control.FindChild<swc.Border>("Header");
-
-		private void SetHeaderPadding()
-		{
-			var header = HeaderControl;
-			if (header == null)
-				return;
-			if (headerPadding == null)
-				headerPadding = header.Padding;
-			var noHeader = string.IsNullOrEmpty(Text);
-			header.Padding = noHeader ? new sw.Thickness(0) : headerPadding.Value;
+			Control.Header = string.IsNullOrEmpty(AccessText.Text) ? null : Header;
 		}
 
 		public override void SetContainerContent(sw.FrameworkElement content)
@@ -80,8 +62,7 @@ namespace Eto.Wpf.Forms.Controls
 			set
 			{
 				AccessText.Text = value.ToPlatformMnemonic();
-				if (Control.IsLoaded)
-					SetHeaderPadding();
+				UpdateHeader();
 				UpdatePreferredSize();
 			}
 		}

@@ -1,37 +1,7 @@
-using System;
-using Eto.Forms;
-using Eto.Drawing;
 using Eto.Mac.Drawing;
 using Eto.Mac.Forms.Cells;
 
 
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
 
 namespace Eto.Mac.Forms.Controls
 {
@@ -56,6 +26,8 @@ namespace Eto.Mac.Forms.Controls
 		void OnCellEditing(GridViewCellEventArgs e);
 
 		void OnCellEdited(GridViewCellEventArgs e);
+		
+		bool OnCellEditCancelled(GridViewCellEventArgs e);
 
 		Grid Widget { get; }
 
@@ -65,6 +37,9 @@ namespace Eto.Mac.Forms.Controls
 
 		void ResetAutoSizedColumns();
 		bool AutoSizeColumns(bool force, bool forceNewSize = false);
+
+		int GetColumnDisplayIndex(GridColumn column);
+		void SetColumnDisplayIndex(GridColumn column, int index);
 	}
 
 	public interface IDataColumnHandler : GridColumn.IHandler
@@ -75,15 +50,18 @@ namespace Eto.Mac.Forms.Controls
 		void SetObjectValue(object dataItem, NSObject val);
 		new GridColumn Widget { get; }
 		IDataViewHandler DataViewHandler { get; }
-		void AutoSizeColumn(NSRange rowRange, bool force = false);
+		ICellHandler DataCellHandler { get; }
+		bool AutoSizeColumn(NSRange? rowRange, bool force = false);
 		void EnabledChanged(bool value);
 		nfloat GetPreferredWidth(NSRange? range = null);
 		void SizeToFit();
+		void SetupDisplayIndex();
 	}
 
 	public class GridColumnHandler : MacObject<NSTableColumn, GridColumn, GridColumn.ICallback>, GridColumn.IHandler, IDataColumnHandler
 	{
 		Cell dataCell;
+		bool autoSize;
 
 		static readonly object Font_Key = new object();
 		static readonly object WidthAdjust_Key = new object();
@@ -116,18 +94,22 @@ namespace Eto.Mac.Forms.Controls
 			base.Initialize();
 		}
 
-		public void AutoSizeColumn(NSRange rowRange, bool force = false)
+		public bool AutoSizeColumn(NSRange? rowRange, bool force = false)
 		{
 			var handler = DataViewHandler;
 			if (handler == null)
-				return;
+				return false;
 
 			if (AutoSize)
 			{
 				var width = GetPreferredWidth(rowRange);
 				if (force || width > Control.Width)
+				{
 					Control.Width = (nfloat)Math.Ceiling(width);
+					return true;
+				}
 			}
+			return false;
 		}
 
 		public nfloat GetPreferredWidth(NSRange? range = null)
@@ -139,12 +121,12 @@ namespace Eto.Mac.Forms.Controls
 				return Width;
 
 			var outlineView = handler.Table as NSOutlineView;
+			bool isOutlineColumn = outlineView != null && Column == 0;
 			if (handler.ShowHeader)
-			{
 				width = (nfloat)Math.Max(Control.HeaderCell.CellSizeForBounds(new CGRect(0, 0, int.MaxValue, int.MaxValue)).Width, width);
-				if (outlineView != null && Column == 0)
-					width += (float)outlineView.IndentationPerLevel;
-			}
+			
+			if (isOutlineColumn)
+				width += (float)outlineView.IndentationPerLevel;
 
 			if (dataCell != null)
 			{
@@ -154,6 +136,8 @@ namespace Eto.Mac.Forms.Controls
 				var cellSize = Control.DataCell.CellSize;
 				cellSize.Height = (nfloat)Math.Max(cellSize.Height, handler.RowHeight);
 				var cell = DataCellHandler;
+				var displayIndex = DisplayIndex;
+				var columnRect = isOutlineColumn ? outlineView.RectForColumn(displayIndex) : CGRect.Empty;
 				for (int i = (int)currentRange.Location; i < (int)(currentRange.Location + currentRange.Length); i++)
 				{
 					var item = DataViewHandler.GetItem(i);
@@ -162,9 +146,10 @@ namespace Eto.Mac.Forms.Controls
 					// -1 signifies that it doesn't support getting the preferred width
 					if (cellWidth == -1)
 						cellWidth = Control.Width;
-					else if (outlineView != null && Column == 0)
+					else if (isOutlineColumn)
 					{
-						cellWidth += outlineView.GetCellFrame(0, i).X;
+						// gets the proper indent for the current row
+						cellWidth += outlineView.GetCellFrame(displayIndex, i).X - columnRect.X;
 					}
 					width = (nfloat)Math.Max(width, cellWidth);
 				}
@@ -176,7 +161,14 @@ namespace Eto.Mac.Forms.Controls
 		public string HeaderText
 		{
 			get { return Control.HeaderCell.StringValue; }
-			set { Control.HeaderCell.StringValue = value; }
+			set
+			{
+				if (value != HeaderText)
+				{
+					Control.HeaderCell.StringValue = value;
+					Control.TableView?.HeaderView?.SetNeedsDisplay();
+				}
+			}
 		}
 
 		public bool Resizable
@@ -196,8 +188,16 @@ namespace Eto.Mac.Forms.Controls
 
 		public bool AutoSize
 		{
-			get;
-			set;
+			get => autoSize;
+			set
+			{
+				if (autoSize != value)
+				{
+					autoSize = value;
+					if (autoSize && !IsLoaded)
+						Control.Width = Control.MinWidth;
+				}
+			}
 		}
 
 		public bool Sortable { get; set; }
@@ -216,9 +216,10 @@ namespace Eto.Mac.Forms.Controls
 					var cellHandler = (ICellHandler)dataCell.Handler;
 					cellHandler.Editable = value;
 				}
-				if (IsLoaded)
+				var tableView = Control.TableView;
+				if (IsLoaded && tableView != null)
 				{
-					Control.TableView?.SetNeedsDisplay();
+					tableView.NeedsDisplay = true;
 				}
 
 			}
@@ -346,7 +347,7 @@ namespace Eto.Mac.Forms.Controls
 		public int MinWidth
 		{
 			get => (int)Control.MinWidth + IntercellSpacingWidth;
-			set 
+			set
 			{
 				if (value == MinWidth)
 					return;
@@ -418,6 +419,42 @@ namespace Eto.Mac.Forms.Controls
 		}
 
 		public void SizeToFit() => Control.SizeToFit();
+
+
+		static readonly object DisplayIndex_Key = new object();
+		public int DisplayIndex
+		{
+			get => DataViewHandler?.GetColumnDisplayIndex(Widget) ?? Widget.Properties.Get<int?>(DisplayIndex_Key) ?? -1;
+			set
+			{
+				Widget.Properties.Set<int?>(DisplayIndex_Key, value);
+				DataViewHandler?.SetColumnDisplayIndex(Widget, value);
+			}
+		}
+
+		public string HeaderToolTip
+		{
+			get => Control.HeaderToolTip;
+			set => Control.HeaderToolTip = value ?? string.Empty;
+		}
+
+		static readonly object CellToolTipBinding_Key = new object();
+
+		public IIndirectBinding<string> CellToolTipBinding
+		{
+			get => Widget.Properties.Get<IIndirectBinding<string>>(CellToolTipBinding_Key);
+			set => Widget.Properties.Set(CellToolTipBinding_Key, value);
+		}
+
+		public void SetupDisplayIndex()
+		{
+			var displayIndex = Widget.Properties.Get<int?>(DisplayIndex_Key) ?? -1;
+			if (displayIndex >= 0)
+			{
+				DataViewHandler?.SetColumnDisplayIndex(Widget, displayIndex);
+				Widget.Properties.Remove(DisplayIndex_Key);
+			}
+		}
 	}
 }
 

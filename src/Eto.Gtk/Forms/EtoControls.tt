@@ -5,19 +5,16 @@
 <#@ import namespace="System.Text" #>
 <#@ import namespace="System.Collections.Generic" #>
 
-using System;
 using Eto;
-using Eto.Drawing;
-
 namespace Eto.GtkSharp.Forms
 {
 <#
-var controls = new[] { "Fixed", "EventBox", "VBox" };
+var controls = new[] { "Frame", "Fixed", "EventBox", "Box", "ScrolledWindow" };
 
 foreach (var control in controls)
 {
 #>
-    public partial class Eto<#=control#> : Gtk.<#=control#>
+    public partial class Eto<#=control#> : Gtk.<#=control#>, IGtkPreferredSizeWidget
     {
         WeakReference _handler;
         public IGtkControl Handler
@@ -25,6 +22,18 @@ foreach (var control in controls)
             get => _handler?.Target as IGtkControl;
             set => _handler = new WeakReference(value);
         }
+<#
+	if (control == "Box")
+	{
+#>
+	public EtoBox(Gtk.Orientation orientation, int spacing)
+		: base(orientation, spacing)
+	{
+		
+	}
+<#
+	}
+#>
         
 #if GTK3        
         protected override void OnGetPreferredWidth(out int minimum_width, out int natural_width)
@@ -33,7 +42,7 @@ foreach (var control in controls)
             var h = Handler;
             if (h != null)
             {
-                var userPreferredSize = h.UserPreferredSize;
+                var userPreferredSize = h.GetNaturalSizeRequest();
                 if (userPreferredSize.Width > 0)
                     natural_width = userPreferredSize.Width;
 
@@ -47,7 +56,7 @@ foreach (var control in controls)
             var h = Handler;
             if (h != null)
             {
-                var userPreferredSize = h.UserPreferredSize;
+                var userPreferredSize = h.GetNaturalSizeRequest();
                 if (userPreferredSize.Width > 0)
                     natural_width = userPreferredSize.Width;
 
@@ -61,13 +70,27 @@ foreach (var control in controls)
             var h = Handler;
             if (h != null)
             {
-                var userPreferredSize = h.UserPreferredSize;
+                var userPreferredSize = h.GetNaturalSizeRequest();
                 if (userPreferredSize.Height > 0)
                     natural_height = userPreferredSize.Height;
 
                 minimum_height = Math.Min(natural_height, minimum_height);
             }
         }
+
+		protected override void OnGetPreferredHeightForWidth(int width, out int minimum_height, out int natural_height)
+		{
+			base.OnGetPreferredHeightForWidth(width, out minimum_height, out natural_height);
+            var h = Handler;
+            if (h != null)
+            {
+                var userPreferredSize = h.GetNaturalSizeRequest();
+                if (userPreferredSize.Height > 0)
+                    natural_height = userPreferredSize.Height;
+
+                minimum_height = Math.Min(natural_height, minimum_height);
+            }
+		}
         
         protected override void OnAdjustSizeAllocation(Gtk.Orientation orientation, out int minimum_size, out int natural_size, out int allocated_pos, out int allocated_size)
         {
@@ -75,7 +98,7 @@ foreach (var control in controls)
             var h = Handler;
             if (h != null)
             {
-                var preferredSize = orientation == Gtk.Orientation.Horizontal ? h.UserPreferredSize.Width : h.UserPreferredSize.Height;
+                var preferredSize = orientation == Gtk.Orientation.Horizontal ? h.GetNaturalSizeRequest().Width : h.GetNaturalSizeRequest().Height;
 
                 if (preferredSize > 0)
                     natural_size = preferredSize;
@@ -90,7 +113,7 @@ foreach (var control in controls)
             var h = Handler;
             if (h != null)
             {
-                var preferredSize = orientation == Gtk.Orientation.Horizontal ? h.UserPreferredSize.Width : h.UserPreferredSize.Height;
+                var preferredSize = orientation == Gtk.Orientation.Horizontal ? h.GetNaturalSizeRequest().Width : h.GetNaturalSizeRequest().Height;
 
                 if (preferredSize > 0)
                     natural_size = preferredSize;

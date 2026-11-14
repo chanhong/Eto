@@ -1,44 +1,53 @@
-using System;
-using Eto.Forms;
-using System.IO;
 using Eto.Mac.Drawing;
-using Eto.Drawing;
-
-#if XAMMAC2
-using AppKit;
-using Foundation;
-using CoreGraphics;
-using ObjCRuntime;
-using CoreAnimation;
-#else
-using MonoMac.AppKit;
-using MonoMac.Foundation;
-using MonoMac.CoreGraphics;
-using MonoMac.ObjCRuntime;
-using MonoMac.CoreAnimation;
-#if Mac64
-using nfloat = System.Double;
-using nint = System.Int64;
-using nuint = System.UInt64;
-#else
-using nfloat = System.Single;
-using nint = System.Int32;
-using nuint = System.UInt32;
-#endif
-#if SDCOMPAT
-using CGSize = System.Drawing.SizeF;
-using CGRect = System.Drawing.RectangleF;
-using CGPoint = System.Drawing.PointF;
-#endif
-#endif
-
 namespace Eto.Mac.Forms
 {
 	public class ClipboardHandler : DataObjectHandler<Clipboard, Clipboard.ICallback>, Clipboard.IHandler
 	{
+		UITimer changeTimer;
+		nint changeCount = -1;
+
 		protected override NSPasteboard CreateControl() => NSPasteboard.GeneralPasteboard;
 
 		protected override bool DisposeControl => false;
+
+		public override void AttachEvent(string id)
+		{
+			switch (id)
+			{
+				case Clipboard.ChangedEvent:
+					changeCount = Control.ChangeCount;
+					changeTimer ??= new UITimer { Interval = 0.2 };
+					changeTimer.Elapsed -= ChangeTimer_Elapsed;
+					changeTimer.Elapsed += ChangeTimer_Elapsed;
+					changeTimer.Start();
+					break;
+				default:
+					base.AttachEvent(id);
+					break;
+			}
+		}
+
+		void ChangeTimer_Elapsed(object sender, EventArgs e)
+		{
+			var current = Control.ChangeCount;
+			if (current == changeCount)
+				return;
+
+			changeCount = current;
+			Callback.OnChanged(Widget, EventArgs.Empty);
+		}
+
+		protected override void Dispose(bool disposing)
+		{
+			if (disposing && changeTimer != null)
+			{
+				changeTimer.Stop();
+				changeTimer.Elapsed -= ChangeTimer_Elapsed;
+				changeTimer.Dispose();
+				changeTimer = null;
+			}
+			base.Dispose(disposing);
+		}
 
 		/*
 		public DataObject DataObject
@@ -58,4 +67,3 @@ namespace Eto.Mac.Forms
 
 	}
 }
-

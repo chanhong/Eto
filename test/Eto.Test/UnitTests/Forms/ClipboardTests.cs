@@ -1,19 +1,33 @@
-using Eto.Forms;
 using NUnit.Framework;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Eto.Drawing;
-using System.IO;
-
 namespace Eto.Test.UnitTests.Forms
 {
 	[TestFixture]
 	public class ClipboardTests : BaseDataObjectTests<Clipboard>
 	{
 		protected override bool IsClipboard => true;
+
+		[Test]
+		public void ImageShouldSurviveSourceDisposal() => Invoke(() =>
+		{
+			using var clipboard = new Clipboard();
+			clipboard.Clear();
+			try
+			{
+				using (var source = new Bitmap(1, 1, PixelFormat.Format32bppRgba))
+				{
+					source.SetPixel(0, 0, Colors.Red);
+					clipboard.Image = source;
+				}
+				clipboard.Text = "Hello";
+				using var result = clipboard.Image as Bitmap;
+				Assert.That(result?.GetPixel(0, 0), Is.EqualTo(Colors.Red));
+				Assert.That(clipboard.Text, Is.EqualTo("Hello"));
+			}
+			finally
+			{
+				clipboard.Clear();
+			}
+		});
 	}
 
 	[TestFixture]
@@ -38,7 +52,7 @@ namespace Eto.Test.UnitTests.Forms
 					var clipboard = new T();
 					var val = "Hello" + i;
 					clipboard.Text = val;
-					Assert.AreEqual(val, clipboard.Text);
+					Assert.That(clipboard.Text, Is.EqualTo(val));
 				}
 			});
 		}
@@ -52,12 +66,54 @@ namespace Eto.Test.UnitTests.Forms
 			String,
 			Data,
 			Uris,
+			SerializableObject,
+			NormalObject,
+			UnsafeObject
 		}
 
 		const string SampleText = "Hello";
 		const string SampleStringType = "eto-string";
 		const string SampleDataType = "eto-data";
+		const string SampleSerializableObjectType = "eto-serializable-object";
+		const string SampleObjectType = "eto-object";
+		const string SampleUnsafeObjectType = "eto-unsafe-object";
 		const string SampleHtml = "<strong>Some Html</strong>";
+
+		[Serializable]
+		public class SerializableObject : ISerializable
+		{
+
+			public string SomeValue { get; set; }
+			public ChildObject ChildObject { get; set; } = new ChildObject();
+			public SerializableObject()
+			{
+			}
+
+			public SerializableObject(SerializationInfo info, StreamingContext context)
+			{
+				SomeValue = info.GetString("SomeValue");
+				ChildObject = info.GetValue("Child", typeof(ChildObject)) as ChildObject;
+			}
+
+			public void GetObjectData(SerializationInfo info, StreamingContext context)
+			{
+				info.AddValue("SomeValue", SomeValue);
+				info.AddValue("Child", ChildObject);
+			}
+		}
+
+		[Serializable]
+		public class SomeOtherObject
+		{
+			public string SomeValue { get; set; }
+
+			public ChildObject ChildObject { get; set; } = new ChildObject();
+		}
+
+		public class ChildObject
+		{
+			public bool SomeProperty { get; set; } = new Random().Next() % 2 == 0;
+		}
 
 		static byte[] SampleByteData => new byte[] { 10, 20, 30 };
 
@@ -65,7 +121,8 @@ namespace Eto.Test.UnitTests.Forms
 		static Uri[] SampleUrlUris => new[] { new Uri("http://google.com") };
 		static Uri[] SampleFileUris
 		{
-			get {
+			get
+			{
 				var path = EtoEnvironment.GetFolderPath(EtoSpecialFolder.Documents);
 				return new[] { new Uri(path) };
 			}
@@ -90,29 +147,41 @@ namespace Eto.Test.UnitTests.Forms
 			switch (type)
 			{
 				case DataType.Text:
-					Assert.IsFalse(dataObject.ContainsText);
-					Assert.IsNull(dataObject.Text);
+					Assert.That(dataObject.ContainsText, Is.False);
+					Assert.That(dataObject.Text, Is.Null);
 					break;
 				case DataType.Html:
-					Assert.IsFalse(dataObject.ContainsHtml);
-					Assert.IsNull(dataObject.Html);
+					Assert.That(dataObject.ContainsHtml, Is.False);
+					Assert.That(dataObject.Html, Is.Null);
 					break;
 				//case DataType.Icon:
 				case DataType.Bitmap:
-					Assert.IsFalse(dataObject.ContainsImage);
-					Assert.IsNull(dataObject.Image);
+					Assert.That(dataObject.ContainsImage, Is.False);
+					Assert.That(dataObject.Image, Is.Null);
 					break;
 				case DataType.String:
-					CollectionAssert.DoesNotContain(SampleStringType, dataObject.Types);
-					Assert.IsNull(dataObject.GetString(SampleStringType));
+					Assert.That(dataObject.Types, Does.Not.Contain(SampleStringType));
+					Assert.That(dataObject.GetString(SampleStringType), Is.Null);
 					break;
 				case DataType.Data:
-					CollectionAssert.DoesNotContain(SampleDataType, dataObject.Types);
-					Assert.IsNull(dataObject.GetData(SampleDataType));
+					Assert.That(dataObject.Types, Does.Not.Contain(SampleDataType));
+					Assert.That(dataObject.GetData(SampleDataType), Is.Null);
 					break;
 				case DataType.Uris:
-					Assert.IsFalse(dataObject.ContainsUris);
-					Assert.IsNull(dataObject.Uris);
+					Assert.That(dataObject.ContainsUris, Is.False);
+					Assert.That(dataObject.Uris, Is.Null);
+					break;
+				case DataType.SerializableObject:
+					Assert.That(dataObject.Types, Does.Not.Contain(SampleSerializableObjectType));
+					Assert.That(dataObject.GetObject<SerializableObject>(SampleSerializableObjectType), Is.Null);
+					break;
+				case DataType.NormalObject:
+					Assert.That(dataObject.Types, Does.Not.Contain(SampleObjectType));
+					Assert.That(dataObject.GetObject<SomeOtherObject>(SampleObjectType), Is.Null);
+					break;
+				case DataType.UnsafeObject:
+					Assert.That(dataObject.Types, Does.Not.Contain(SampleUnsafeObjectType));
+					Assert.That(dataObject.GetObject(SampleUnsafeObjectType), Is.Null);
 					break;
 				default:
 					throw new NotSupportedException();
@@ -130,39 +199,68 @@ namespace Eto.Test.UnitTests.Forms
 			switch (type)
 			{
 				case DataType.Text:
-					Assert.IsTrue(dataObject.ContainsText);
-					Assert.IsNotNull(dataObject.Text);
-					Assert.AreEqual(SampleText, dataObject.Text);
+					Assert.That(dataObject.ContainsText, Is.True);
+					Assert.That(dataObject.Text, Is.Not.Null);
+					Assert.That(dataObject.Text, Is.EqualTo(SampleText));
 					break;
 				case DataType.Html:
-					Assert.IsTrue(dataObject.ContainsHtml);
-					Assert.IsNotNull(dataObject.Html);
-					Assert.AreEqual(SampleHtml, dataObject.Html);
+					Assert.That(dataObject.ContainsHtml, Is.True);
+					Assert.That(dataObject.Html, Is.Not.Null);
+					if (IsClipboard)
+					{
+						Assert.That(dataObject.Html, Does.Contain(SampleHtml));
+						Assert.That(dataObject.Html, Does.Not.Contain("StartHTML:"));
+						Assert.That(dataObject.Html, Does.Not.Contain("EndHTML:"));
+						Assert.That(dataObject.Html, Does.Not.Contain("StartFragment:"));
+						Assert.That(dataObject.Html, Does.Not.Contain("EndFragment:"));
+					}
+					else
+					{
+						Assert.That(dataObject.Html, Is.EqualTo(SampleHtml));
+					}
 					break;
 				//case DataType.Icon:
-					//Assert.IsNotNull(dataObject.Image);
-					//break;
+				//Assert.That(dataObject.Image, Is.Not.Null);
+				//break;
 				case DataType.Bitmap:
-					Assert.IsTrue(dataObject.ContainsImage);
-					Assert.IsNotNull(dataObject.Image);
+					Assert.That(dataObject.ContainsImage, Is.True);
+					Assert.That(dataObject.Image, Is.Not.Null);
 					break;
 				case DataType.String:
-					Assert.Contains(SampleStringType, dataObject.Types);
-					Assert.IsNotNull(dataObject.GetString(SampleStringType));
-					Assert.AreEqual(SampleText, dataObject.GetString(SampleStringType));
+					Assert.That(dataObject.Types, Contains.Item(SampleStringType));
+					Assert.That(dataObject.GetString(SampleStringType), Is.Not.Null);
+					Assert.That(dataObject.GetString(SampleStringType), Is.EqualTo(SampleText));
 					break;
 				case DataType.Data:
-					Assert.Contains(SampleDataType, dataObject.Types);
-					Assert.IsNotNull(dataObject.GetData(SampleDataType));
-					Assert.AreEqual(SampleByteData, dataObject.GetData(SampleDataType));
+					Assert.That(dataObject.Types, Contains.Item(SampleDataType));
+					Assert.That(dataObject.GetData(SampleDataType), Is.Not.Null);
+					Assert.That(dataObject.GetData(SampleDataType), Is.EqualTo(SampleByteData));
 					break;
 				case DataType.Uris:
-					Assert.IsTrue(dataObject.ContainsUris);
-					Assert.IsNotNull(dataObject.Uris);
+					Assert.That(dataObject.ContainsUris, Is.True);
+					Assert.That(dataObject.Uris, Is.Not.Null);
 					if (Platform.Instance.IsGtk && EtoEnvironment.Platform.IsMac && dataObject.Uris.Length != SampleBothUris.Length)
 						Assert.Warn("Gtk on macOS only returns a single URI for some reason.");
 					else
-						CollectionAssert.AreEquivalent(SampleBothUris, dataObject.Uris);
+						Assert.That(dataObject.Uris, Is.EquivalentTo(SampleBothUris));
+					break;
+				case DataType.SerializableObject:
+					Assert.That(dataObject.Types, Contains.Item(SampleSerializableObjectType));
+					var obj = dataObject.GetObject<SerializableObject>(SampleSerializableObjectType);
+					Assert.That(obj, Is.Not.Null);
+					Assert.That(SampleText, Is.EqualTo(obj.SomeValue));
+					break;
+				case DataType.NormalObject:
+					Assert.That(dataObject.Types, Contains.Item(SampleObjectType));
+					var obj2 = dataObject.GetObject<SomeOtherObject>(SampleObjectType);
+					Assert.That(obj2, Is.Not.Null);
+					Assert.That(SampleText, Is.EqualTo(obj2.SomeValue));
+					break;
+				case DataType.UnsafeObject:
+					Assert.That(dataObject.Types, Contains.Item(SampleUnsafeObjectType));
+					var obj3 = dataObject.GetObject(SampleUnsafeObjectType) as SomeOtherObject;
+					Assert.That(obj3, Is.Not.Null);
+					Assert.That(SampleText, Is.EqualTo(obj3.SomeValue));
 					break;
 				default:
 					throw new NotSupportedException();
@@ -186,8 +284,8 @@ namespace Eto.Test.UnitTests.Forms
 					dataObject.Html = SampleHtml;
 					break;
 				//case DataType.Icon:
-					//dataObject.Image = TestIcons.Logo;
-					//break;
+				//dataObject.Image = TestIcons.Logo;
+				//break;
 				case DataType.Bitmap:
 					dataObject.Image = TestIcons.TestImage;
 					break;
@@ -199,6 +297,15 @@ namespace Eto.Test.UnitTests.Forms
 					break;
 				case DataType.Uris:
 					dataObject.Uris = SampleBothUris;
+					break;
+				case DataType.SerializableObject:
+					dataObject.SetObject(new SerializableObject { SomeValue = SampleText }, SampleSerializableObjectType);
+					break;
+				case DataType.NormalObject:
+					dataObject.SetObject(new SomeOtherObject { SomeValue = SampleText }, SampleObjectType);
+					break;
+				case DataType.UnsafeObject:
+					dataObject.SetObject(new SomeOtherObject { SomeValue = SampleText }, SampleUnsafeObjectType);
 					break;
 				default:
 					throw new NotSupportedException();
@@ -220,14 +327,14 @@ namespace Eto.Test.UnitTests.Forms
 			});
 			// if it's a clipboard, test a new instance of the clipboard has the same values that we set.
 			if (IsClipboard)
-			Invoke(() =>
-			{
-				using (var clipboard = new T())
+				Invoke(() =>
 				{
-					TestValue(clipboard, property);
-					TestIsNullExcept(clipboard, property);
-				}
-			});
+					using (var clipboard = new T())
+					{
+						TestValue(clipboard, property);
+						TestIsNullExcept(clipboard, property);
+					}
+				});
 		}
 
 		[TestCaseSource(nameof(GetDataTypes))]
@@ -265,7 +372,10 @@ namespace Eto.Test.UnitTests.Forms
 				DataType.Text,
 				DataType.Html,
 				DataType.String,
-				DataType.Data
+				DataType.Data,
+				DataType.SerializableObject,
+				DataType.NormalObject,
+				DataType.UnsafeObject
 			};
 
 			Invoke(() =>
@@ -293,15 +403,41 @@ namespace Eto.Test.UnitTests.Forms
 					using (var clipboard = new T())
 					{
 						TestIsNullExcept(clipboard);
-						CollectionAssert.DoesNotContain("eto-woot", clipboard.Types);
-						CollectionAssert.DoesNotContain("eto-byte-data", clipboard.Types);
-						Assert.AreEqual(null, clipboard.Text);
-						Assert.AreEqual(null, clipboard.Html);
-						Assert.AreEqual(null, clipboard.Image);
-						Assert.AreEqual(null, clipboard.GetString("eto-woot"));
-						Assert.AreEqual(null, clipboard.GetData("eto-byte-data"));
+						Assert.That(clipboard.Types, Does.Not.Contain("eto-woot"));
+						Assert.That(clipboard.Types, Does.Not.Contain("eto-byte-data"));
+						Assert.That(clipboard.Text, Is.EqualTo(null));
+						Assert.That(clipboard.Html, Is.EqualTo(null));
+						Assert.That(clipboard.Image, Is.EqualTo(null));
+						Assert.That(clipboard.GetString("eto-woot"), Is.EqualTo(null));
+						Assert.That(clipboard.GetData("eto-byte-data"), Is.EqualTo(null));
 					}
 				});
 		}
+
+		[Test]
+		public void DisposedClipboardShouldNotBreak() => Async(() =>
+		{
+			var clipboard1 = new Clipboard();
+			clipboard1.Text = "Hello";
+			Assert.That(clipboard1.Text, Is.EqualTo("Hello"), "#1");
+			clipboard1.Dispose();
+
+			GC.Collect();
+			GC.WaitForPendingFinalizers();
+
+			var clipboard2 = new Clipboard();
+			Assert.That(clipboard2.Text, Is.EqualTo("Hello"), "#1");
+			clipboard2.Text = "Hello2";
+			Assert.That(clipboard2.Text, Is.EqualTo("Hello2"), "#1");
+			clipboard2.Dispose();
+
+			GC.Collect();
+			GC.WaitForPendingFinalizers();
+
+			using var clipboard3 = new Clipboard();
+			Assert.That(clipboard3.Text, Is.EqualTo("Hello2"), "#1");
+			clipboard3.Dispose();
+			return Task.CompletedTask;
+		});
 	}
 }

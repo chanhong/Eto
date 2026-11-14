@@ -1,20 +1,8 @@
-using System;
-using swc = System.Windows.Controls;
-using sw = System.Windows;
 using swd = System.Windows.Data;
-using swa = System.Windows.Automation;
-using swm = System.Windows.Media;
-using Eto.Forms;
-using System.Collections;
-using System.Collections.Generic;
-using Eto.Drawing;
-using System.Globalization;
 using Eto.Wpf.Drawing;
-using System.Linq;
-using System.Collections.Specialized;
-
 namespace Eto.Wpf.Forms.Controls
 {
+	
 	public class DropDownHandler : DropDownHandler<EtoComboBox, DropDown, DropDown.ICallback>
 	{
 		internal static readonly object AllowVirtualization_Key = new object();
@@ -23,28 +11,10 @@ namespace Eto.Wpf.Forms.Controls
 
 	public class EtoComboBox : swc.ComboBox, IEtoWpfControl
 	{
-		int? selected;
-
-		public EtoComboBox()
-		{
-			Loaded += ComboBoxEx_Loaded;
-		}
-
 		public bool IsVirtualizing
 		{
 			get => swc.VirtualizingPanel.GetIsVirtualizing(this);
 			set => swc.VirtualizingPanel.SetIsVirtualizing(this, value);
-		}
-
-		public override void OnApplyTemplate()
-		{
-			base.OnApplyTemplate();
-
-			if (!IsLoaded)
-			{
-				selected = SelectedIndex;
-				SelectedIndex = -1;
-			}
 		}
 
 		public swc.Primitives.Popup Popup => GetTemplateChild("PART_Popup") as swc.Primitives.Popup;
@@ -64,12 +34,6 @@ namespace Eto.Wpf.Forms.Controls
 
 		public IWpfFrameworkElement Handler { get; set; }
 
-		protected override void OnSelectionChanged(swc.SelectionChangedEventArgs e)
-		{
-			if (selected == null)
-				base.OnSelectionChanged(e);
-		}
-
 		protected override void OnItemsChanged(System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
 		{
 			base.OnItemsChanged(e);
@@ -79,48 +43,59 @@ namespace Eto.Wpf.Forms.Controls
 			}
 		}
 
-		void ComboBoxEx_Loaded(object sender, sw.RoutedEventArgs e)
+		public double? FindMaxWidth()
 		{
-			if (selected == null) return;
-			SelectedIndex = selected.Value;
-			selected = null;
-		}
-
-		sw.Size FindMaxSize(sw.Size constraint)
-		{
-			var size = base.MeasureOverride(constraint);
 			var popup = GetTemplateChild("PART_Popup") as swc.Primitives.Popup;
 			if (popup == null)
-				return size;
+				return null;
 
-			popup.Child.Measure(WpfConversions.PositiveInfinitySize); // force generating containers
+			try
+			{
+				popup.Child.Measure(WpfConversions.PositiveInfinitySize); // force generating containers
+			}
+			catch (Exception ex)
+			{
+				// SafeLayout already keeps an item that can't be laid out from being fatal, so this is
+				// only reached when something else in the popup fails. Carry on with whatever containers
+				// were generated - sizing to the items that do work beats giving up on a width entirely.
+				Trace.WriteLine($"Could not measure drop down items: {ex}");
+			}
 
 			if (ItemContainerGenerator.Status != swc.Primitives.GeneratorStatus.ContainersGenerated)
-				return size;
+				return null;
+
+			var count = Items.Count;
+			if (count == 0)
+				return null;
 
 			double maxWidth = 0;
-			for (int i = 0; i < Items.Count; i++)
+			for (int i = 0; i < count; i++)
 			{
 				var item = Items[i];
 				var comboBoxItem = (swc.ComboBoxItem)ItemContainerGenerator.ContainerFromItem(item);
 				if (comboBoxItem == null)
 					continue;
-				comboBoxItem.Measure(WpfConversions.PositiveInfinitySize);
+				try
+				{
+					comboBoxItem.Measure(WpfConversions.PositiveInfinitySize);
+				}
+				catch (Exception ex)
+				{
+					// as above - skip this item, but keep sizing to the ones that do work
+					Trace.WriteLine($"Could not measure drop down item '{item}': {ex}");
+					continue;
+				}
 				maxWidth = Math.Max(maxWidth, comboBoxItem.DesiredSize.Width);
 			}
 
 			var toggle = GetTemplateChild("toggleButton") as sw.UIElement;
 			maxWidth += toggle?.DesiredSize.Width ?? 20;
-			size.Width = Math.Max(maxWidth, size.Width);
-			if (!double.IsNaN(constraint.Width))
-				size.Width = Math.Min(size.Width, constraint.Width);
-
-			return size;
+			return maxWidth;
 		}
 
 		protected override sw.Size MeasureOverride(sw.Size constraint)
 		{
-			return Handler?.MeasureOverride(constraint, FindMaxSize) ?? FindMaxSize(constraint);
+			return Handler?.MeasureOverride(constraint, base.MeasureOverride) ?? base.MeasureOverride(constraint);
 		}
 	}
 
@@ -131,6 +106,7 @@ namespace Eto.Wpf.Forms.Controls
 		where TCallback: DropDown.ICallback
 	{
 		IEnumerable<object> store;
+		WeakEventListener storeListener;
 
 		public DropDownHandler()
 		{
@@ -183,17 +159,16 @@ namespace Eto.Wpf.Forms.Controls
 			get { return store; }
 			set
 			{
-				if (store is INotifyCollectionChanged notifyChanged)
-				{
-					notifyChanged.CollectionChanged -= Store_CollectionChanged;
-				}
+				storeListener?.Detach();
+				storeListener = null;
 
 				var oldSelectedIndex = SelectedIndex;
 				store = value;
 
-				if (store is INotifyCollectionChanged notifyChanged2)
+				// only hold this handler weakly, so a long lived data store doesn't keep the control alive
+				if (store is INotifyCollectionChanged notifyChanged)
 				{
-					notifyChanged2.CollectionChanged += Store_CollectionChanged;
+					storeListener = WeakEventListener.Create(notifyChanged, this, static (h, s, e) => h.Store_CollectionChanged(s, e));
 				}
 
 				SetVirtualization();
@@ -208,7 +183,8 @@ namespace Eto.Wpf.Forms.Controls
 		private void Store_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
 		{
 			if (AllowVirtualization)
-				SetVirtualization();	
+				SetVirtualization();
+			maxWidthCache = null;
 		}
 
 		private void SetVirtualization()
@@ -219,8 +195,8 @@ namespace Eto.Wpf.Forms.Controls
 
 		public int SelectedIndex
 		{
-			get { return Control.SelectedIndex; }
-			set { Control.SelectedIndex = value; }
+			get => Control.SelectedIndex;
+			set => Control.SelectedIndex = value;
 		}
 
 		protected virtual swc.Border BorderControl => Control.FindChild<swc.Border>();
@@ -235,18 +211,18 @@ namespace Eto.Wpf.Forms.Controls
 			{
 				var border = BorderControl;
 				if (border != null)
-				{
 					border.Background = value.ToWpfBrush(border.Background);
-				}
+				else
+					PerformOnLoad(() => BackgroundColor = value);
 			}
 		}
-
+		
 		public override Color TextColor
 		{
 			get
 			{
 				var block = Control.FindChild<swc.TextBlock>();
-				return block != null ? block.Foreground.ToEtoColor() : base.TextColor;
+				return block?.Foreground.ToEtoColor() ?? base.TextColor;
 			}
 			set
 			{
@@ -254,7 +230,7 @@ namespace Eto.Wpf.Forms.Controls
 				if (block != null)
 					block.Foreground = value.ToWpfBrush();
 				else
-					base.TextColor = value;
+					PerformOnLoad(() => TextColor = value);
 			}
 		}
 
@@ -274,7 +250,8 @@ namespace Eto.Wpf.Forms.Controls
 
 		void CreateTemplate()
 		{
-			var textBlock = new WpfImageTextBindingBlock(() => Widget.ItemTextBinding, () => Widget.ItemImageBinding, false);
+			maxWidthCache = null;
+			var textBlock = new WpfImageTextBindingBlock(() => Widget.ItemTextBinding, () => Widget.ItemImageBinding);
 			if (IsEventHandled(DropDown.FormatItemEvent))
 			{
 				var fontConverter = new WpfActionValueConverter(ConvertFontFamily);
@@ -328,10 +305,37 @@ namespace Eto.Wpf.Forms.Controls
 					break;
 			}
 		}
-		public void AttachEvent(object widget, object id)
+
+		double? maxWidthCache;
+
+		public override sw.Size MeasureOverride(sw.Size constraint, Func<sw.Size, sw.Size> measure)
 		{
-			
-			//if (id == )
+			// Don't calculate the max width if we have a specified width - it isn't going to be used.
+			// This matters a lot with many items (e.g. a font list): finding the max width has to realize
+			// and measure every item, which is both slow and at the mercy of anything that can go wrong
+			// measuring an item, such as a font WPF is unable to load. Specifying a width means all of
+			// that is deferred until the user actually opens the drop down.
+			if (!double.IsNaN(UserPreferredSize.Width))
+				return base.MeasureOverride(constraint, measure);
+
+			sw.Size MeasureMaxWidth(sw.Size constraint2)
+			{
+				var desired = measure(constraint2);
+
+				if (maxWidthCache == null)
+					maxWidthCache = Control.FindMaxWidth();
+
+				if (maxWidthCache != null)
+					desired.Width = Math.Max(desired.Width, maxWidthCache.Value);
+
+				if (!double.IsNaN(constraint2.Width))
+					desired.Width = Math.Min(constraint2.Width, desired.Width);
+
+				return desired;
+			}
+
+			return base.MeasureOverride(constraint, MeasureMaxWidth);
 		}
+
 	}
 }

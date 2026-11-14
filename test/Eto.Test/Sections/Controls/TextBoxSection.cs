@@ -1,15 +1,31 @@
-using Eto.Forms;
-using Eto.Drawing;
-
 namespace Eto.Test.Sections.Controls
 {
 	[Section("Controls", typeof(TextBox))]
-	public class TextBoxSection : Scrollable
+	public class TextBoxSection : TextBoxSection<TextBox>
 	{
+	}
+	
+	[Section("Controls", typeof(SearchBox))]
+	public class SearchBoxSection : TextBoxSection<SearchBox>
+	{
+	}
+	
+	public class TextBoxSection<T> : Scrollable
+		where T: TextBox, new()
+	{
+		bool cancelTextChanging;
+		bool cancelTextInput;
+
 		public TextBoxSection()
 		{
-			var textBox = new TextBox();
+			var textBox = new T();
 			LogEvents(textBox);
+
+			var cancelTextChangingCheckBox = new CheckBox { Text = "Cancel TextChanging" };
+			cancelTextChangingCheckBox.CheckedBinding.Bind(() => cancelTextChanging, v => cancelTextChanging = v ?? false);
+
+			var cancelTextInputCheckBox = new CheckBox { Text = "Cancel TextInput" };
+			cancelTextInputCheckBox.CheckedBinding.Bind(() => cancelTextInput, v => cancelTextInput = v ?? false);
 
 			var placeholderText = new TextBox();
 			placeholderText.TextBinding.Bind(textBox, c => c.PlaceholderText);
@@ -37,11 +53,22 @@ namespace Eto.Test.Sections.Controls
 
 			var selectionMode = new EnumDropDown<AutoSelectMode>();
 			selectionMode.SelectedValueBinding.Bind(textBox, c => c.AutoSelectMode);
+			
+			var alwaysShowSelection = new CheckBox { Text = "AlwaysShowSelection" };
+			alwaysShowSelection.CheckedBinding.Bind(textBox, c => c.AlwaysShowSelection);
+
+			var backgroundColorPicker = new ColorPicker { AllowAlpha = true };
+			backgroundColorPicker.ValueBinding.Bind(textBox, c => c.BackgroundColor);
+
+			var textColorPicker = new ColorPicker { AllowAlpha = true };
+			textColorPicker.ValueBinding.Bind(textBox, c => c.TextColor);
 
 			var layout = new DynamicLayout { Padding = 10, DefaultSpacing = new Size(5, 5) };
 			layout.AddSeparateRow(null, enabledCheckBox, readOnlyCheckBox, showBorderCheckBox, null);
-			layout.AddSeparateRow(null, "TextAlignment", alignmentDropDown, "SelectionMode", selectionMode, null);
+			layout.AddSeparateRow(null, "TextAlignment", alignmentDropDown, "SelectionMode", selectionMode, alwaysShowSelection, null);
 			layout.AddSeparateRow(null, "MaxLength", maxLengthStepper, "PlaceholderText", placeholderText, null);
+			layout.AddSeparateRow(null, "BackgroundColor", backgroundColorPicker, "TextColor", textColorPicker, null);
+			layout.AddSeparateRow(null, cancelTextChangingCheckBox, cancelTextInputCheckBox, null);
 			layout.AddSeparateRow(null, setTextButton, selectAllButton, null);
 			layout.Add(null);
 			layout.AddCentered(textBox);
@@ -53,16 +80,27 @@ namespace Eto.Test.Sections.Controls
 
 		Control DifferentSize()
 		{
-			var control = new TextBox { Text = "Different Size (300x50)", Size = new Size(300, 50) };
+			var control = new T { Text = "Different Size (300x50)", Size = new Size(300, 50) };
 			LogEvents(control);
 			return control;
 		}
 
 		void LogEvents(TextBox control)
 		{
-			control.TextChanging += (sender, e) => Log.Write(control, $"TextChanging, Range: {e.Range}, Text: {e.Text}");
+			control.MouseDown += (sender, e) => Log.Write(control, $"MouseDown: {e.Location}, Index: {control.GetCharacterIndex(e.Location)}");
+			control.TextChanging += (sender, e) =>
+			{
+				if (cancelTextChanging)
+					e.Cancel = true;
+				Log.Write(control, $"TextChanging, Source: {e.Source}, Range: {e.Range}, Text: {e.Text}, Cancel: {e.Cancel}");
+			};
 			control.TextChanged += (sender, e) => Log.Write(control, $"TextChanged, Text: {control.Text}, Selection: {control.Selection}");
-			control.TextInput += (sender, e) => Log.Write(control, "TextInput: {0}", e.Text);
+			control.TextInput += (sender, e) =>
+			{
+				if (cancelTextInput)
+					e.Cancel = true;
+				Log.Write(control, "TextInput: {0}, Cancel: {1}", e.Text, e.Cancel);
+			};
 			control.KeyDown += (sender, e) =>
 			{
 				if (e.KeyData == (Keys.Slash | Keys.Shift))
@@ -70,7 +108,11 @@ namespace Eto.Test.Sections.Controls
 					e.Handled = true;
 					Log.Write(control, $"Selection: {control.Selection}");
 				}
+				else
+					Log.Write(control, $"KeyDown: {e.KeyData}");
 			};
+
+			control.KeyUp += (sender, e) => Log.Write(control, $"KeyUp: {e.KeyData}");
 		}
 	}
 }

@@ -1,9 +1,3 @@
-using System;
-using System.Linq;
-using swf = System.Windows.Forms;
-using sd = System.Drawing;
-using Eto.Forms;
-
 namespace Eto.WinForms.Forms.Controls
 {
 	public class CheckBoxHandler : WindowsControl<swf.CheckBox, CheckBox, CheckBox.ICallback>, CheckBox.IHandler
@@ -50,6 +44,18 @@ namespace Eto.WinForms.Forms.Controls
 		public override bool ShouldBubbleEvent(swf.Message msg)
 		{
 			return !intrinsicEvents.Contains((Win32.WM)msg.Msg) && base.ShouldBubbleEvent(msg);
+		}
+
+		public bool UseMnemonic
+		{
+			get => Control.UseMnemonic;
+			set => Control.UseMnemonic = value;
+		}
+
+		public bool AlwaysShowMnemonic
+		{
+			get => false;
+			set { /* not supported */ }
 		}
 	}
 }

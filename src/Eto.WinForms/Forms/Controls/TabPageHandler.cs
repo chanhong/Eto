@@ -1,9 +1,3 @@
-using System;
-using sd = System.Drawing;
-using swf = System.Windows.Forms;
-using Eto.Forms;
-using Eto.Drawing;
-
 namespace Eto.WinForms.Forms.Controls
 {
 	public class TabPageHandler : WindowsPanel<swf.TabPage, TabPage, TabPage.ICallback>, TabPage.IHandler
@@ -51,6 +45,18 @@ namespace Eto.WinForms.Forms.Controls
 				tabcontrol.ImageList.AddImage (image, Control.ImageKey);
 				// must set image index since it doesn't work with key for tabs.. ugh
 				Control.ImageIndex = tabcontrol.ImageList.Images.IndexOfKey (Control.ImageKey);
+			}
+		}
+
+		bool visible = true;
+
+		public override bool Visible {
+			get { return visible; }
+			set {
+				if (visible == value)
+					return;
+				visible = value;
+				(Widget.Parent?.Handler as TabControlHandler)?.SetPageVisible (Widget, value);
 			}
 		}
 

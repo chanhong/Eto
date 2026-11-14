@@ -1,22 +1,12 @@
-using Eto.Drawing;
-using Eto.Forms;
 using Eto.Wpf.Forms.Cells;
 using Eto.Wpf.Forms.ToolBar;
-using swi = System.Windows.Input;
-using swm = System.Windows.Media;
-using sw = System.Windows;
 using Eto.Wpf.Drawing;
 using Eto.Wpf.Forms.Menu;
 using Eto.Wpf.Forms.Controls;
 using Eto.Wpf.Forms.Printing;
 using Eto.Wpf.Forms;
-using Eto.IO;
-using Eto.Wpf.IO;
 using Eto.Forms.ThemedControls;
 using Eto.Shared.Forms;
-using System.Linq;
-using System.Diagnostics;
-
 namespace Eto.Wpf
 {
 	public class Platform : Eto.Platform
@@ -30,7 +20,9 @@ namespace Eto.Wpf
 		public override PlatformFeatures SupportedFeatures =>
 			PlatformFeatures.DrawableWithTransparentContent
 			| PlatformFeatures.CustomCellSupportsControlView
-			| PlatformFeatures.TabIndexWithCustomContainers;
+			| PlatformFeatures.TabIndexWithCustomContainers
+			| PlatformFeatures.MultiThreadedUI
+			| PlatformFeatures.Mnemonics;
 
 		static Platform()
 		{
@@ -38,16 +30,45 @@ namespace Eto.Wpf
 
 			Style.Add<ThemedSegmentedButtonHandler>(null, h =>
 			{
-				h.Control.Styles.Add<ToggleButtonHandler>(null, tb =>
+				h.Widget.Items.CollectionChanged += (sender, e) =>
 				{
-					if (tb.Widget.Parent is TableLayout tl && tl.Rows.Count > 0 && tl.Spacing.Width == 0)
+					var count = h.Widget.Items.Count;
+					for (int i = 0; i < count; i++)
 					{
-						var isFirst = ReferenceEquals(tl.Rows[0].Cells[0].Control, tb.Widget);
-						var thickness = tb.Control.BorderThickness;
-						thickness.Left = isFirst ? thickness.Right : 0;
-						tb.Control.BorderThickness = thickness;
+						SegmentedItem item = h.Widget.Items[i];
+						if (item.ControlObject is Control control)
+						{
+							var native = control.ToNative();
+							if (native != null)
+							{
+								WpfProperties.SetEtoStyle(native, "SegmentedButton");
+								if (i == 0)
+								{
+									if (i == count - 1)
+										WpfProperties.SetEtoModifier(native, "only");
+									else
+										WpfProperties.SetEtoModifier(native, "first");
+								}
+								else if (i == count - 1)
+									WpfProperties.SetEtoModifier(native, "last");
+								else
+									native.ClearValue(WpfProperties.EtoModifierProperty);
+							}
+						}
+
 					}
-				});
+				};
+			});
+
+			Style.Add<ThemedMessageBox>(null, c =>
+			{
+				c.Load += (sender, e) =>
+				{
+					if (c.ControlObject is sw.Window window)
+					{
+						window.WindowStartupLocation = sw.WindowStartupLocation.CenterScreen;
+					}
+				};
 			});
 		}
 
@@ -64,6 +85,7 @@ namespace Eto.Wpf
 			// Drawing
 			p.Add<Bitmap.IHandler>(() => new BitmapHandler());
 			p.Add<FontFamily.IHandler>(() => new FontFamilyHandler());
+			p.Add<FontTypeface.IHandler>(() => new FontTypefaceHandler());
 			p.Add<Font.IHandler>(() => new FontHandler());
 			p.Add<Fonts.IHandler>(() => new FontsHandler());
 			p.Add<Graphics.IHandler>(() => new GraphicsHandler());
@@ -79,6 +101,10 @@ namespace Eto.Wpf
 			p.Add<RadialGradientBrush.IHandler>(() => new RadialGradientBrushHandler());
 			p.Add<SystemColors.IHandler>(() => new SystemColorsHandler());
 			p.Add<FormattedText.IHandler>(() => new FormattedTextHandler());
+			p.Add<MagnificationGesture.IHandler>(() => new MagnificationGestureHandler());
+			p.Add<RotationGesture.IHandler>(() => new RotationGestureHandler());
+			p.Add<PanGesture.IHandler>(() => new PanGestureHandler());
+			p.Add<ScrollGesture.IHandler>(() => new ScrollGestureHandler());
 
 			// Forms.Cells
 			p.Add<CheckBoxCell.IHandler>(() => new CheckBoxCellHandler());
@@ -96,7 +122,7 @@ namespace Eto.Wpf
 			p.Add<CheckBox.IHandler>(() => new CheckBoxHandler());
 			p.Add<DropDown.IHandler>(() => new DropDownHandler());
 			p.Add<ComboBox.IHandler>(() => new ComboBoxHandler());
-			p.Add<ColorPicker.IHandler>(() => new ColorPickerHandler());
+			p.Add<ColorPicker.IHandler>(() => new ThemedColorPickerHandler());
 			p.Add<DateTimePicker.IHandler>(() => new DateTimePickerHandler());
 			p.Add<Drawable.IHandler>(() => new DrawableHandler());
 			p.Add<Expander.IHandler>(() => new ExpanderHandler());
@@ -108,7 +134,8 @@ namespace Eto.Wpf
 			p.Add<Label.IHandler>(() => new LabelHandler());
 			p.Add<LinkButton.IHandler>(() => new LinkButtonHandler());
 			p.Add<ListBox.IHandler>(() => new ListBoxHandler());
-			p.Add<NumericStepper.IHandler>(() => new NumericStepperHandler());
+			// p.Add<ListBox.IHandler>(() => new ThemedListBoxHandler());
+			p.Add<NumericStepper.IHandler>(() => new ThemedNumericStepperHandler());
 			p.Add<Panel.IHandler>(() => new PanelHandler());
 			p.Add<PasswordBox.IHandler>(() => new PasswordBoxHandler());
 			p.Add<ProgressBar.IHandler>(() => new ProgressBarHandler());
@@ -124,7 +151,7 @@ namespace Eto.Wpf
 			p.Add<TextBox.IHandler>(() => new TextBoxHandler());
 			p.Add<TreeGridView.IHandler>(() => new TreeGridViewHandler());
 #pragma warning disable CS0618 // Type or member is obsolete
-			p.Add<TreeView.IHandler>(() => new TreeViewHandler());
+			p.Add<TreeView.IHandler>(() => new ThemedTreeViewHandler());
 #pragma warning restore CS0618 // Type or member is obsolete
 			//p.Add<WebView.IHandler>(()  => new WebViewHandler ());
 			p.Add<RichTextArea.IHandler>(() => new RichTextAreaHandler());
@@ -139,6 +166,7 @@ namespace Eto.Wpf
 			p.Add<ToggleButton.IHandler>(() => new ToggleButtonHandler());
 			p.Add<PropertyGrid.IHandler>(() => new ThemedPropertyGridHandler());
 			p.Add<CollectionEditor.IHandler>(() => new ThemedCollectionEditorHandler());
+			p.Add<NativeControlHost.IHandler>(() => new NativeControlHandler());
 
 			// Forms.Menu
 			p.Add<CheckMenuItem.IHandler>(() => new CheckMenuItemHandler());
@@ -151,6 +179,7 @@ namespace Eto.Wpf
 
 			// Forms.Printing
 			p.Add<PrintDialog.IHandler>(() => new PrintDialogHandler());
+			p.Add<PrintPreviewDialog.IHandler>(() => new PrintPreviewDialogHandler());
 			p.Add<PrintDocument.IHandler>(() => new PrintDocumentHandler());
 			p.Add<PrintSettings.IHandler>(() => new PrintSettingsHandler());
 
@@ -159,19 +188,21 @@ namespace Eto.Wpf
 			p.Add<RadioToolItem.IHandler>(() => new RadioToolItemHandler());
 			p.Add<SeparatorToolItem.IHandler>(() => new SeparatorToolItemHandler());
 			p.Add<ButtonToolItem.IHandler>(() => new ButtonToolItemHandler());
+			p.Add<DropDownToolItem.IHandler>(() => new DropDownToolItemHandler());
 			p.Add<ToolBar.IHandler>(() => new ToolBarHandler());
 
 			// Forms
 			p.Add<AboutDialog.IHandler>(() => new ThemedAboutDialogHandler());
 			p.Add<Application.IHandler>(() => new ApplicationHandler());
 			p.Add<Clipboard.IHandler>(() => new ClipboardHandler());
-			p.Add<ColorDialog.IHandler>(() => new ColorDialogHandler());
+			p.Add<ColorDialog.IHandler>(() => new ThemedColorDialogHandler());
 			p.Add<Cursor.IHandler>(() => new CursorHandler());
 			p.Add<Dialog.IHandler>(() => new DialogHandler());
-			p.Add<FontDialog.IHandler>(() => new FontDialogHandler());
+			p.Add<FontDialog.IHandler>(() => new ThemedFontDialogHandler());
 			p.Add<Form.IHandler>(() => new FormHandler());
 			p.Add<FloatingForm.IHandler>(() => new FloatingFormHandler());
-			p.Add<MessageBox.IHandler>(() => new MessageBoxHandler());
+			// p.Add<MessageBox.IHandler>(() => new MessageBoxHandler());
+			p.Add<MessageBox.IHandler>(() => new ThemedMessageBoxHandler());
 			p.Add<OpenFileDialog.IHandler>(() => new OpenFileDialogHandler());
 			p.Add<OpenWithDialog.IHandler>(() => new OpenWithDialogHandler());
 			p.Add<PixelLayout.IHandler>(() => new PixelLayoutHandler());
@@ -191,6 +222,9 @@ namespace Eto.Wpf
 			p.Add<DataObject.IHandler>(() => new DataObjectHandler());
 			p.Add<DataFormats.IHandler>(() => new DataFormatsHandler());
 			p.Add<Taskbar.IHandler>(() => new TaskbarHandler());
+			p.Add<Window.IWindowHandler>(() => new WindowHandler());
+			p.Add<Themes.IHandler>(() => new ThemesHandler());
+			p.Add<Theme.IHandler>(() => throw new InvalidOperationException());
 
 			// IO
 			p.Add<SystemIcons.IHandler>(() => new SystemIconsHandler());
@@ -216,23 +250,17 @@ namespace Eto.Wpf
 
 		private WebView.IHandler Create_WebView2()
 		{
-#if NET45
-			Debug.WriteLine("Warning: .NET 4.5 target cannot use WebView2.  Target at least .NET 4.6.2, .NET Core, or .NET 5 instead and install the Microsoft.Web.WebView2 nuget package. Falling back to the Windows Forms WebView.");
-			UseSwfWebView();
-			return new SwfWebViewHandler();
-#else
 			try
 			{
 				return WebView2Loader.Create();
 			}
 			catch
 			{
-				Debug.WriteLine("Warning: Could not create WebView2 handler. Add Microsoft.Web.WebView2 nuget package to your project to take advantage of the latest web control.");
+				Trace.WriteLine("Warning: Could not create WebView2 handler. Add Microsoft.Web.WebView2 nuget package to your project to take advantage of the latest web control.");
 				// switch to SWF version for subsequent controls
 				UseSwfWebView();
 				return new SwfWebViewHandler();
 			}
-#endif
 		}
 	}
 }
